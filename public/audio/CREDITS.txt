@@ -1,0 +1,15 @@
+Lucky Live sound effects
+
+Crowd celebration: BerlinGameScene.com Crowd Cheer 1, BerlinGameScene.
+https://freesound.org/people/BerlinGameScene/sounds/267249/
+CC0 1.0. Trimmed/faded, equalized and loudness normalized.
+Credit: BerlinGameScene.com
+
+Wheel clicks: Tools Ratchet, CapsLok.
+https://freesound.org/people/CapsLok/sounds/181634/
+https://commons.wikimedia.org/wiki/File:Tools_Ratchet.ogg
+CC0 1.0. Recorded ratchet transients edited into a 7-second decelerating spin.
+
+Both are real-world recordings, not synthesized tones.
+
+finale-fanfare.m4a: Original programmatically composed brass, timpani and bell fanfare created for Lucky Live.
