@@ -1,10 +1,11 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { closeRoom, createRoom, roomServiceReady, readRoom, saveRoom } from '../../lib/store';
+import { applyGiftAction, giftView, type GiftState } from './gifts';
 import { nameKey } from '../../lib/roster';
 import { examplePrizes, MAX_PARTICIPANTS, maskName, nextPrizeIndex, type Prize, type Spin, type Award } from '../../lib/wheel';
 export const dynamic = 'force-dynamic';
 const reply = (data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
-type Stored = {title:string; prizeCatalogVersion?:number; progressionVersion?:number; prizes?:Prize[]; items?:string[]; participants?:string[]; selectedPrizeIndex?:number; roundWaitSeconds?:number; drawMode?:'scroll'|'wheel'; nextRoundAt?:number; breakPending?:boolean; spin:Spin|null; history?:Array<Award & {label?:string}>};
+type Stored = {kind?:undefined;title:string; prizeCatalogVersion?:number; progressionVersion?:number; prizes?:Prize[]; items?:string[]; participants?:string[]; selectedPrizeIndex?:number; roundWaitSeconds?:number; drawMode?:'scroll'|'wheel'; nextRoundAt?:number; breakPending?:boolean; spin:Spin|null; history?:Array<Award & {label?:string}>};
 const validId = (id: unknown): id is string =>
   typeof id === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id);
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -70,9 +71,18 @@ export async function GET(req:Request){try{
   }
   if (!validId(id)) return reply({error:'ไม่พบห้อง'},404);
   if (!roomServiceReady()) return unavailable();
-  const row = await readRoom<Stored>(id);
+  const row = await readRoom<Stored | GiftState>(id);
   if (!row) return reply({error:'ห้องนี้ปิดแล้ว หมดอายุ หรือไม่พบลิงก์'},404);
   const host = url.searchParams.get('viewer') !== '1' && isHost(req, id, row.secret);
+  if (row.data.kind === 'gift') {
+    const view = giftView(row.data,host);
+    if (url.searchParams.get('export') !== 'csv') return reply(view);
+    if (!host) return reply({error:'สำหรับผู้ควบคุมเท่านั้น'},403);
+    const rows = [['ผู้ให้','ผู้รับ'],...view.pairs.map(pair => [pair.giver,pair.recipient])];
+    return new Response('\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n'), {
+      headers:{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="gift-pairs.csv"','Cache-Control':'no-store'},
+    });
+  }
   const data = normalized(JSON.stringify(row.data));
   if (url.searchParams.get('export') === 'csv') {
     if (!host) return reply({error:'สำหรับผู้ควบคุมเท่านั้น'},403);
@@ -112,20 +122,28 @@ export async function POST(req: Request) {
   if (body.op === 'create') {
     if (!canCreate(req, creatorKey())) return reply({error:'เปิดลิงก์แอดมินส่วนตัวก่อนสร้างห้อง'},403);
     const id = crypto.randomUUID(), token = crypto.randomUUID() + crypto.randomUUID();
-    const data: ReadyRoom = {title:'Enchanted Kingdom Lucky Draw Live',prizeCatalogVersion:2,progressionVersion:1,prizes:[{id:'party-draw',name:'จับฉลาก',value:0,repeatable:true}],participants:[],selectedPrizeIndex:0,roundWaitSeconds:0,nextRoundAt:0,breakPending:false,drawMode:'scroll',spin:null};
+    const data: GiftState = {kind:'gift',title:'Enchanted Kingdom Gift Exchange',participants:[],drawMode:'scroll',assignments:[],pairs:[],spin:null};
     await createRoom(id, hash(token), data);
-    const response = reply({id,...roomView(data,true)});
+    const response = reply({id,...giftView(data,true)});
     response.headers.set('Set-Cookie', cookie(sessionName(id), token));
     return response;
   }
   if (!validId(body.id) || !tokenFrom(req, sessionName(body.id))) return reply({error:'ไม่มีสิทธิ์ควบคุม'},403);
-  const row = await readRoom<Stored>(body.id);
+  const row = await readRoom<Stored | GiftState>(body.id);
   if (!row || !isHost(req, body.id, row.secret)) return reply({error:'ไม่มีสิทธิ์ควบคุมห้องนี้'},403);
   if (body.op === 'close') {
     if (!await closeRoom(body.id, row.revision)) return reply({error:'มีคำสั่งพร้อมกัน กรุณาลองใหม่'},409);
     const response = reply({closed:true});
     response.headers.set('Set-Cookie', sessionName(body.id) + '=; Path=/api/room; HttpOnly; SameSite=Strict; Max-Age=0');
     return response;
+  }
+  if (row.data.kind === 'gift') {
+    const problem = applyGiftAction(row.data,body,Date.now());
+    if (problem) return reply({error:problem.error},problem.status);
+    if (!await saveRoom(body.id,row.revision,row.data)) {
+      return reply({error:'มีคำสั่งพร้อมกัน กรุณาลองใหม่'},409);
+    }
+    return reply(giftView(row.data,true));
   }
   const data = normalized(JSON.stringify(row.data)), now = Date.now();
   if(data.spin&&now<data.spin.start+data.spin.duration)return reply({error:'รอให้วงล้อหยุดก่อน'},409);
