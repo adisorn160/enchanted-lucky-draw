@@ -23,12 +23,12 @@ test('CSV accepts BOM, reordered headers, and quoted fields', () => {
 });
 
 test('temporary Worker rooms share a single draw across 20 viewers and clear on close', async t => {
-  const key = 'local-test-key-with-24-characters';
   let clock = 1800000000000;
   t.mock.method(Date, 'now', () => clock);
   process.env.ROOM_SERVICE_URL = 'https://worker.invalid';
   process.env.ROOM_SERVICE_KEY = 'test-server-only-key';
-  process.env.ADMIN_ACCESS_KEY = key;
+  const linkKey = 'test-private-admin-access-key';
+  process.env.ADMIN_ACCESS_KEY = 'https://event.invalid/#admin=' + linkKey;
   const rooms = new Map();
   const env = {
     ROOM_SERVICE_KEY:process.env.ROOM_SERVICE_KEY,
@@ -45,8 +45,13 @@ test('temporary Worker rooms share a single draw across 20 viewers and clear on 
     headers: { 'Content-Type': 'application/json', Cookie: cookie },
     body: JSON.stringify(body),
   }));
-  assert.equal((await send({op:'create',accessKey:'wrong'})).status, 403);
-  const created = await send({op:'create',accessKey:key});
+  assert.equal((await send({op:'create'})).status,403);
+  assert.equal((await send({op:'unlock',linkKey:'incorrect'})).status,403);
+  const unlocked = await send({op:'unlock',linkKey});
+  assert.equal(unlocked.status,200);
+  const creator = unlocked.headers.get('set-cookie').split(';')[0];
+  assert.match(unlocked.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
+  const created = await send({op:'create'}, creator);
   assert.equal(created.status, 200);
   assert.match(created.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
   const cookie = created.headers.get('set-cookie').split(';')[0];
@@ -85,8 +90,11 @@ test('temporary Worker rooms share a single draw across 20 viewers and clear on 
   assert.equal((await send({op:'close',id},cookie)).status, 200);
   assert.equal((await read('&viewer=1')).status, 404);
 
-  const another = await send({op:'create',accessKey:key});
+  const another = await send({op:'create'}, creator);
   const second = await another.json();
+  assert.notEqual(second.id, id);
+  assert.equal((await send({op:'spin',id:second.id},cookie)).status,403);
+  assert.equal((await send({op:'close',id:second.id},creator)).status,403);
   assert.equal(second.prizes[0].repeatable,true);
   const readSecond = () => GET(new Request(base + '?id=' + second.id + '&viewer=1'));
   assert.equal((await readSecond()).status, 200);

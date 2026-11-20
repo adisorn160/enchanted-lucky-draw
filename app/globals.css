@@ -212,7 +212,6 @@ body {
   border-color: #c19b5f70;
 }
 .room-start-panel { isolation: isolate; position: relative; overflow: hidden; }
-.room-start-panel .access-key { display: block; width: min(100%, 320px); margin: 0 auto 16px; }
 .castle-horizon {
   display: flex;
   justify-content: center;

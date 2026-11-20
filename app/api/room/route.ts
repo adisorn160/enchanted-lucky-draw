@@ -11,11 +11,28 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const matches = (left: string, right: string) =>
   timingSafeEqual(Buffer.from(hash(left)), Buffer.from(hash(right)));
 const sessionName = (id: string) => 'enchanted-host-' + id;
-const tokenFrom = (req: Request, id: string) =>
-  (req.headers.get('cookie') || '').split('; ').find(cookie =>
-    cookie.startsWith(sessionName(id) + '='))?.slice(sessionName(id).length + 1);
+const creatorSession = 'enchanted-creator';
+const tokenFrom = (req: Request, name: string) =>
+  (req.headers.get('cookie') || '').split(';').map(cookie => cookie.trim()).find(cookie =>
+    cookie.startsWith(name + '='))?.slice(name.length + 1);
+
+function creatorKey() {
+  const value = process.env.ADMIN_ACCESS_KEY?.trim() || '';
+  if (!value.startsWith('https://')) return value;
+  try { return new URLSearchParams(new URL(value).hash.slice(1)).get('admin') || ''; }
+  catch { return ''; }
+}
+
+const creatorToken = (key: string) => hash('enchanted-creator-session:' + key);
+const canCreate = (req: Request, key: string) => {
+  const token = tokenFrom(req, creatorSession);
+  return key.length >= 24 && Boolean(token && matches(token, creatorToken(key)));
+};
+
+const cookie = (name: string, value: string) =>
+  `${name}=${value}; Path=/api/room; HttpOnly; SameSite=Strict; Max-Age=86400${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
 const isHost = (req: Request, id: string, secret: string) => {
-  const token = tokenFrom(req, id);
+  const token = tokenFrom(req, sessionName(id));
   return Boolean(token && matches(hash(token), secret));
 };
 const unavailable = () => reply({error:'กำลังตั้งค่าบริการห้องจับฉลากสด'},503);
@@ -48,7 +65,8 @@ const csvCell=(v:unknown)=>'"'+String(v).replace(/^[=+@\-\t\r]/,"'$&").replace(/
 export async function GET(req:Request){try{
   const url=new URL(req.url),id=url.searchParams.get('id');
   if (url.searchParams.has('status')) {
-    return reply({configured: roomServiceReady() && (process.env.ADMIN_ACCESS_KEY?.length ?? 0) >= 24});
+    const key = creatorKey();
+    return reply({configured: roomServiceReady() && key.length >= 24, canCreate: canCreate(req, key)});
   }
   if (!validId(id)) return reply({error:'ไม่พบห้อง'},404);
   if (!roomServiceReady()) return unavailable();
@@ -82,21 +100,25 @@ export async function POST(req: Request) {
   } catch {
     return reply({error:'ข้อมูลไม่ถูกต้อง'},400);
   }
-  if (body.op === 'create') {
-    const access = process.env.ADMIN_ACCESS_KEY;
-    if (!access || access.length < 24) return reply({error:'ระบบยังไม่ได้ตั้งค่ารหัสผู้ควบคุม'},503);
-    if (typeof body.accessKey !== 'string' || !matches(body.accessKey, access)) {
-      return reply({error:'รหัสผู้ควบคุมไม่ถูกต้อง'},403);
+  if (body.op === 'unlock') {
+    const key = creatorKey();
+    if (key.length < 24 || typeof body.linkKey !== 'string' || !matches(body.linkKey, key)) {
+      return reply({error:'ลิงก์แอดมินใช้ไม่ได้ กรุณาเปิดลิงก์ส่วนตัวล่าสุด'},403);
     }
+    const response = reply({configured:true,canCreate:true});
+    response.headers.set('Set-Cookie', cookie(creatorSession, creatorToken(key)));
+    return response;
+  }
+  if (body.op === 'create') {
+    if (!canCreate(req, creatorKey())) return reply({error:'เปิดลิงก์แอดมินส่วนตัวก่อนสร้างห้อง'},403);
     const id = crypto.randomUUID(), token = crypto.randomUUID() + crypto.randomUUID();
     const data: ReadyRoom = {title:'Enchanted Kingdom Lucky Draw Live',prizeCatalogVersion:2,progressionVersion:1,prizes:[{id:'party-draw',name:'จับฉลาก',value:0,repeatable:true}],participants:[],selectedPrizeIndex:0,roundWaitSeconds:0,nextRoundAt:0,breakPending:false,drawMode:'scroll',spin:null};
     await createRoom(id, hash(token), data);
     const response = reply({id,...roomView(data,true)});
-    const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-    response.headers.set('Set-Cookie', `${sessionName(id)}=${token}; Path=/api/room; HttpOnly; SameSite=Strict; Max-Age=86400${secure}`);
+    response.headers.set('Set-Cookie', cookie(sessionName(id), token));
     return response;
   }
-  if (!validId(body.id) || !tokenFrom(req, body.id)) return reply({error:'ไม่มีสิทธิ์ควบคุม'},403);
+  if (!validId(body.id) || !tokenFrom(req, sessionName(body.id))) return reply({error:'ไม่มีสิทธิ์ควบคุม'},403);
   const row = await readRoom<Stored>(body.id);
   if (!row || !isHost(req, body.id, row.secret)) return reply({error:'ไม่มีสิทธิ์ควบคุมห้องนี้'},403);
   if (body.op === 'close') {

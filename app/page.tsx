@@ -200,7 +200,7 @@ function WinnerPopup({roomId,spin,onConfirm,busy,error,readOnly=false,controller
 }
 
 export default function Home(){
-  const [id,setId]=useState(''),[accessKey,setAccessKey]=useState(''),[room,setRoom]=useState<Room|null>(null);
+  const [id,setId]=useState(''),[room,setRoom]=useState<Room|null>(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[networkError,setNetworkError]=useState(''),[notice,setNotice]=useState('');
   const [waitSeconds,setWaitSeconds]=useState(10);
   const [presentation,setPresentation]=useState(false);
@@ -209,6 +209,7 @@ export default function Home(){
   const [offset,setOffset]=useState(0),[now,setNow]=useState(0),[ready,setReady]=useState(false),[hostRoom,setHostRoom]=useState('');
   const mutation=useRef(0),mutating=useRef(false),stage=useRef<HTMLElement>(null);
   const [liveConfigured,setLiveConfigured]=useState<boolean|null>(null);
+  const [canCreateRoom,setCanCreateRoom]=useState(false);
   const [drawMode,setDrawMode]=useState<Room['drawMode']>('scroll');
   const [roomEnded,setRoomEnded]=useState(false);
   const [confirmClose,setConfirmClose]=useState(false);
@@ -280,11 +281,18 @@ export default function Home(){
   }, [id,showHistory,viewOnly]);
   useEffect(()=>{
     if (id) return;
-    const controller = new AbortController();
-    fetch('/api/room?status=1',{signal:controller.signal})
-      .then(response=>response.json()).then(result=>setLiveConfigured(result.configured===true))
-      .catch(()=>{if(!controller.signal.aborted)setLiveConfigured(false)});
-    return ()=>controller.abort();
+    const linkKey = new URLSearchParams(location.hash.slice(1)).get('admin');
+    if (linkKey) window.history.replaceState({}, '', location.pathname + location.search);
+    const request = linkKey
+      ? fetch('/api/room', {method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({op:'unlock',linkKey})})
+      : fetch('/api/room?status=1', {cache:'no-store'});
+    request.then(async response=>{
+      const result = await response.json();
+      if (!response.ok) throw Error(result.error || 'เปิดสิทธิ์แอดมินไม่สำเร็จ');
+      setLiveConfigured(result.configured === true);
+      setCanCreateRoom(result.canCreate === true);
+    }).catch(e=>setError((e as Error).message));
   },[id]);
   useEffect(()=>{if(!room)return;setWaitSeconds(room.roundWaitSeconds);setDrawMode(room.drawMode);setTitle(room.title);setPrizes(room.prizes.map(p=>({...p})));setNamesText(room.participants.join('\n'));},[formatSignature]);
   useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),4500);return()=>clearTimeout(t)},[notice]);
@@ -293,13 +301,13 @@ export default function Home(){
     setBusy(true);setError('');mutating.current=true;mutation.current++;
     try{
       const started=Date.now();
-      const res=await fetch('/api/room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op,id,accessKey:op==='create'?accessKey:undefined,title,prizes,participants:inputNames,prizeIndex,roundWaitSeconds:waitSeconds,drawMode,spinId:spin?.id})});
+      const res=await fetch('/api/room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op,id,title,prizes,participants:inputNames,prizeIndex,roundWaitSeconds:waitSeconds,drawMode,spinId:spin?.id})});
       const data=await res.json() as Room & {id:string;error?:string};if(!res.ok)throw Error(data.error||'ดำเนินการไม่สำเร็จ');
       if(op==='close'){window.location.assign('/');return true;}
       setOffset(data.now-(started+Date.now())/2);setNow(data.now);setRoom(data);
       if(op==='create'){
         try{localStorage.setItem('last-host-room',data.id)}catch{}
-        window.history.replaceState({},'','?room='+data.id+(presentation?'&present=1':''));setAccessKey('');setId(data.id);setHostRoom(data.id);
+        window.history.replaceState({},'','?room='+data.id+(presentation?'&present=1':''));setId(data.id);setHostRoom(data.id);
       }
       if(op==='config'){setNamesText(data.participants.join('\n'));setEditing(false);setNotice('บันทึกชื่อและของรางวัลแล้ว · ประวัติเดิมยังอยู่ครบ')}
       if(op==='spin'&&!presentation){stage.current?.scrollIntoView({behavior:'smooth',block:'start'});}
@@ -337,7 +345,7 @@ export default function Home(){
     {error&&<div role="alert" className="alert">{error}<button aria-label="ปิดข้อความ" onClick={()=>setError('')}>×</button></div>}
     {networkError&&<div className="alert" role="status">{networkError}{!roomEnded&&' · กำลังเชื่อมต่อใหม่'}</div>}
     {notice&&<div className="toast" role="status">{notice}</div>}
-    {!id&&!presentation&&!showHistory&&ready&&<section className="room-start-panel"><div className="castle-horizon" aria-hidden="true"><i/><i/><i/><i/><i/></div><p className="eyebrow">ห้องจับฉลากสด</p><h2>เปิดประตูสู่อาณาจักรแห่งโชค</h2><p>กรอกรายชื่อแล้วส่งลิงก์ให้เพื่อนเปิดดูสดบนเครื่องของตัวเอง ห้องมีอายุสูงสุด 8 ชั่วโมง</p><div className="screen-explain"><div><b>01 · หน้าควบคุม</b><span>เพิ่มรายชื่อ · กดสุ่ม · รับทราบผล · ดาวน์โหลด CSV</span></div><div><b>02 · หน้าจอผู้ชม</b><span>รางวัล · รายชื่อกำลังสุ่ม · ประกาศผู้ชนะ · เสียงประกอบ</span></div></div>{liveConfigured===false&&<p role="status">อยู่ระหว่างตั้งค่าห้องจับฉลากสด</p>}<label htmlFor="access-key">รหัสผู้ควบคุม</label><input id="access-key" className="access-key" type="password" disabled={!liveConfigured} autoComplete="current-password" value={accessKey} onChange={event=>setAccessKey(event.target.value)}/><button className="primary" disabled={busy||!ready||!accessKey||!liveConfigured} onClick={()=>act('create')}>{busy?'กำลังสร้างห้อง…':'＋ สร้างห้องและเข้าหน้าควบคุม'}</button>{hostRoom&&<a className="secondary" href={'/?room='+hostRoom}>กลับหน้าควบคุมห้องล่าสุด ↗</a>}</section>}
+    {!id&&!presentation&&!showHistory&&ready&&<section className="room-start-panel"><div className="castle-horizon" aria-hidden="true"><i/><i/><i/><i/><i/></div><p className="eyebrow">ห้องจับฉลากสด</p><h2>เปิดประตูสู่อาณาจักรแห่งโชค</h2><p>กรอกรายชื่อแล้วส่งลิงก์ให้เพื่อนเปิดดูสดบนเครื่องของตัวเอง ห้องมีอายุสูงสุด 8 ชั่วโมง</p><div className="screen-explain"><div><b>01 · หน้าควบคุม</b><span>เพิ่มรายชื่อ · กดสุ่ม · รับทราบผล · ดาวน์โหลด CSV</span></div><div><b>02 · หน้าจอผู้ชม</b><span>รางวัล · รายชื่อกำลังสุ่ม · ประกาศผู้ชนะ · เสียงประกอบ</span></div></div>{liveConfigured===false&&<p role="status">อยู่ระหว่างตั้งค่าห้องจับฉลากสด</p>}{liveConfigured&& !canCreateRoom&&<p>เปิดลิงก์แอดมินส่วนตัวเพื่อสร้างห้อง ถ้ามีลิงก์ผู้ชม ให้เปิดลิงก์ห้องนั้นเพื่อดูสด</p>}{canCreateRoom&&<button className="primary" disabled={busy||!ready||!liveConfigured} onClick={()=>act('create')}>{busy?'กำลังสร้างห้อง…':'＋ สร้างห้องและเข้าหน้าควบคุม'}</button>}{hostRoom&&<a className="secondary" href={'/?room='+hostRoom}>กลับหน้าควบคุมห้องล่าสุด ↗</a>}</section>}
     {controller&&room&&<section className="control-screen-guide"><div className="control-guide-top"><div><h2>หน้าควบคุมสำหรับผู้ดำเนินรายการ</h2><p>ส่งลิงก์ผู้ชมให้เพื่อนเปิดบนมือถือหรือคอมพิวเตอร์ของตัวเอง</p></div><a className="primary open-viewer" href={viewerUrl} target="_blank" rel="noopener" onClick={openViewer}>↗ เปิดหน้าจอผู้ชม</a></div><div className="controller-live-summary" aria-live="polite"><div><span>{spinning?'กำลังสุ่ม':winner?'ผลรางวัลรอบล่าสุด':'รางวัลที่กำลังจะแจก'}</span><strong>{roundPrize?.name||'แจกรางวัลครบแล้ว'}</strong><b>฿{money(roundPrize?.value||0)}</b></div><div><span>{winner?'ผู้ได้รับรางวัล':'สถานะ'}</span><strong>{winner?maskName(winner):spinning?'กำลังสุ่มบนหน้าจอผู้ชม…':cooldown?`พักอีก ${secondsLeft} วินาที`:'พร้อมเริ่มสุ่ม'}</strong><small>{awaitingAck?'กดรับทราบด้านล่างเพื่อมาร์กรางวัลและไปรอบถัดไป':`${room.participants.length} สิทธิ์คงเหลือ`}</small></div><div><span>รางวัลรอบถัดไป</span><strong>{followingPrize?.name||'ไม่มีรางวัลถัดไป'}</strong>{followingPrize&&<b>฿{money(followingPrize.value)}</b>}</div></div><p className="controller-note">ทั้งสองหน้าซิงค์จากห้องเดียวกัน · เสียงประกอบเล่นที่หน้าจอผู้ชมเท่านั้น</p></section>}
     {!showHistory&&eventFinished&&<section className="event-finale panel" aria-label="สรุปผู้ชนะทั้งหมด"><Celebration finale/><div className="finale-heading"><p className="eyebrow">ALL OUR LUCKY WINNERS</p><h2>🏆 ยินดีกับผู้โชคดีทุกคน</h2><p>แจกรางวัลครบแล้ว · {completed.length} รางวัล · มูลค่ารวม ฿{money(room?.totalValue||0)}</p></div><ol className="finale-grid">{[...completed].sort((a,b)=>b.value-a.value||a.at-b.at).map(award=>{const prize=prizePool.find(p=>p.name===award.prize&&p.value===award.value)||{name:award.prize,value:award.value};return <li key={award.spinId}><PrizeImage prize={prize}/><div><h3>{award.prize}</h3><p>มูลค่า ฿{money(award.value)}</p><strong>{maskName(award.participant)}</strong></div></li>})}</ol><p className="finale-thanks">ขอบคุณทุกคนที่มาร่วมลุ้นด้วยกัน ✦</p>{host&&<a className="ghost download" href={'/api/room?id='+encodeURIComponent(id)+'&export=csv'}>↓ ดาวน์โหลดรายชื่อผู้ชนะ CSV</a>}</section>}
     {!showHistory&&!eventFinished&&!roomEnded&&<div className="main-grid">
