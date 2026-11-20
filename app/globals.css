@@ -325,8 +325,10 @@ body:has(.gift-exchange) {
     radial-gradient(ellipse at 87% 11%, #ffd6df9c, transparent 47%),
     radial-gradient(ellipse at 4% 78%, #cbb8ff7a, transparent 54%),
     #f7effb;
-  color: #342443;
-  color-scheme: light;
+  min-height:100svh;
+  background-repeat:no-repeat;
+  color:#342443;
+  color-scheme:light;
 }
 .gift-exchange {
   --gift-plum:#4b305e;
@@ -485,8 +487,8 @@ body:has(.gift-exchange) {
   border-radius:24px;
   min-height:330px;
   background:
-    radial-gradient(ellipse at 50% 10%, #81559099, transparent 62%),
-    linear-gradient(165deg, #52346d, #302040);
+    linear-gradient(155deg,#493063cf,#2e1c3feb),
+    url('/art/lantern-castle-560.webp') center 35%/cover, #38254f;
   box-shadow:0 18px 42px #58386822;
   color:#fff3f1;
 }
@@ -519,4 +521,14 @@ body:has(.gift-exchange) {
   .gift-exchange .brand-symbol { width:32px;height:32px;font-size:17px; }
   .gift-exchange .brand small { font-size:8px;letter-spacing:.1em; }
   .gift-music-button { font-size:12px; padding-inline:10px; }
+}
+
+@media(max-width:740px) {
+  .gift-exchange .gift-pair-list table { display:table; width:100%; table-layout:fixed; }
+  .gift-exchange .gift-pair-list thead { position:static; width:auto; height:auto; overflow:visible; clip-path:none; }
+  .gift-exchange .gift-pair-list tbody { display:table-row-group; }
+  .gift-exchange .gift-pair-list tr { display:table-row; width:auto; padding:0; border:0; }
+  .gift-exchange .gift-pair-list td,
+  .gift-exchange .gift-pair-list td:first-child { display:table-cell; width:auto; padding:10px 8px; margin:0; text-align:left; border-bottom:1px solid #b58ebc45; }
+  .gift-exchange .gift-pair-list td::before { display:none; }
 }
