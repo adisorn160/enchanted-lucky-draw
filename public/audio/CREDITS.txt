@@ -13,3 +13,6 @@ CC0 1.0. Recorded ratchet transients edited into a 7-second decelerating spin.
 Both are real-world recordings, not synthesized tones.
 
 finale-fanfare.m4a: Original programmatically composed brass, timpani and bell fanfare created for Lucky Live.
+
+Lantern Waltz: Original instrumental music composed for Enchanted Kingdom
+Gift Exchange. Celesta, harp, and soft strings.

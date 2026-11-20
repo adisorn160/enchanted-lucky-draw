@@ -6,6 +6,31 @@ import { csvNames } from './lib/roster';
 import { drawPosition, MAX_PARTICIPANTS } from './lib/wheel';
 import type { GiftRoom, GiftSpin } from './lib/gifts';
 
+function GiftMusic() {
+  const audio = useRef<HTMLAudioElement>(null);
+  const [playing,setPlaying] = useState(false);
+  const [unavailable,setUnavailable] = useState(false);
+
+  async function toggle() {
+    const track = audio.current;
+    if (!track) return;
+    if (!track.paused) {track.pause();return;}
+    track.volume=.38;
+    setUnavailable(false);
+    try {await track.play();}
+    catch {setUnavailable(true);}
+  }
+
+  return <div className="gift-music">
+    <audio ref={audio} src="/audio/lantern-waltz.mp3" preload="none" loop
+      onPlaying={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onError={()=>setUnavailable(true)}/>
+    <button className="gift-music-button" type="button" aria-label="เพลงประกอบ" aria-pressed={playing} onClick={toggle}>
+      <span aria-hidden="true">♫</span>{playing?'ปิดเพลง':'เปิดเพลง'}
+    </button>
+    {unavailable&&<span className="gift-music-error" role="status">เล่นเพลงไม่ได้ ลองแตะอีกครั้ง</span>}
+  </div>;
+}
+
 function GiftAnimation({spin, now, mode}: {spin:GiftSpin; now:number; mode:GiftRoom['drawMode']}) {
   const progress = Math.max(0,Math.min(1,(now-spin.start)/spin.duration));
   if (mode === 'scroll') {
@@ -169,16 +194,25 @@ export default function GiftExchange() {
   if (legacy) return <LegacyDraw/>;
   return <main className="gift-exchange">
     <header>
-      <a className="brand" href="/"><span className="brand-symbol" aria-hidden="true">♜</span><span>Enchanted <span className="brand-yellow">Kingdom</span><small>GIFT EXCHANGE</small></span></a>
-      {room&&<span className="gift-role">{room.host?'ผู้ควบคุม':'ผู้ชม'}</span>}
+      <a className="brand" href="/"><span className="brand-symbol" aria-hidden="true">✦</span><span>Enchanted <span className="brand-yellow">Kingdom</span><small>GIFT EXCHANGE</small></span></a>
+      <div className="gift-header-actions">{room&&<span className="gift-role">{room.host?'ผู้ควบคุม':'ผู้ชม'}</span>}<GiftMusic/></div>
     </header>
     {error&&<p role="alert" className="alert">{error}</p>}
-    {!route?.id&&<section className="room-start-panel gift-landing">
-      <div className="castle-horizon" aria-hidden="true"><i/><i/><i/><i/><i/></div>
-      <h1>จับฉลากแลกของขวัญ</h1>
-      <p>เพิ่มรายชื่อ แล้วสุ่มสดว่าแต่ละคนจะให้ของขวัญกับใคร</p>
-      {!configured&&<p>อยู่ระหว่างตั้งค่าห้องสด</p>}
-      {canCreate?<><button className="primary" disabled={busy} onClick={()=>act('create')}>สร้างห้องแลกของขวัญ</button>{lastRoom&&<a className="secondary" href={'/?room='+encodeURIComponent(lastRoom)}>กลับห้องล่าสุด</a>}</>:route&&<p>เปิดลิงก์แอดมินส่วนตัวเพื่อสร้างห้อง หรือเปิดลิงก์ผู้ชมที่ได้รับเพื่อดูสด</p>}
+    {!route?.id&&<section className="gift-landing">
+      <div className="gift-hero-copy">
+        <span className="gift-ornament" aria-hidden="true">✧ ✦ ✧</span>
+        <h1>จับฉลาก<br/>แลกของขวัญ</h1>
+        <p>มาลุ้นด้วยกันว่าใครจะให้ของขวัญกับใคร</p>
+        {!configured&&<p>อยู่ระหว่างตั้งค่าห้องสด</p>}
+        {canCreate?<div className="gift-actions"><button className="primary" disabled={busy} onClick={()=>act('create')}>สร้างห้องแลกของขวัญ</button>{lastRoom&&<a className="ghost" href={'/?room='+encodeURIComponent(lastRoom)}>กลับห้องล่าสุด</a>}</div>:route&&<p className="gift-entry-note">เปิดลิงก์แอดมินส่วนตัวเพื่อสร้างห้อง หรือเปิดลิงก์ผู้ชมที่ได้รับเพื่อดูสด</p>}
+      </div>
+      <div className="gift-hero-art">
+        <img src="/art/lantern-castle-960.webp"
+          srcSet="/art/lantern-castle-560.webp 560w, /art/lantern-castle-960.webp 960w"
+          sizes="(max-width: 720px) 92vw, 560px"
+          width={960} height={720} fetchPriority="high"
+          alt="ภาพวาดปราสาทสีชมพูยามค่ำ พร้อมโคมไฟและกล่องของขวัญ"/>
+      </div>
     </section>}
     {route?.id&&!room&&!closed&&!error&&<p role="status">กำลังเปิดห้องจับฉลาก…</p>}
     {room&&<>
@@ -189,6 +223,7 @@ export default function GiftExchange() {
       {notice&&<p role="status" className="gift-notice">{notice}</p>}
       <div className={room.host?'gift-layout':'gift-layout viewer'}>
         <section className="stage gift-stage" aria-label="ผลจับฉลาก">
+          <span className="gift-stage-spark" aria-hidden="true">✦</span>
           <p className="gift-stage-label">{active?'กำลังสุ่มผู้รับ':lastPair?'คู่ล่าสุด':'พร้อมจับคู่'}</p>
           {active&&room.spin?<><h2>{room.spin.giver} จะให้ของขวัญกับใคร?</h2><GiftAnimation spin={room.spin} now={now} mode={room.drawMode}/></>:
             lastPair?<div className="gift-pair-result" aria-live="polite"><strong>{lastPair.giver}</strong><span>ให้ของขวัญกับ</span><strong>{lastPair.recipient}</strong></div>:
