@@ -1,0 +1,11 @@
+{
+  "name": "enchanted-lucky-draw-rooms",
+  "main": "worker/rooms.ts",
+  "compatibility_date": "2026-11-18",
+  "workers_dev": true,
+  "preview_urls": false,
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "TemporaryRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TemporaryRoom"] }]
+}

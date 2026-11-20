@@ -1,41 +1,42 @@
 type Row<T> = { id: string; secret: string; data: T; revision: number };
 
-export const databaseReady = () => Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY);
+export const roomServiceReady = () => Boolean(
+  process.env.ROOM_SERVICE_URL && process.env.ROOM_SERVICE_KEY,
+);
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY;
-  if (!url || !key) throw new Error('Missing database configuration');
-  const response = await fetch(new URL('/rest/v1/' + path, url), {
-    ...init,
+async function request(id: string, method: string, body?: unknown) {
+  const url = process.env.ROOM_SERVICE_URL;
+  const key = process.env.ROOM_SERVICE_KEY;
+  if (!url || !key) throw new Error('Missing room service configuration');
+  return fetch(new URL('/rooms/' + encodeURIComponent(id), url), {
+    method,
     cache: 'no-store',
-    headers: {
-      apikey: key,
-      ...(key.startsWith('eyJ') ? { Authorization: 'Bearer ' + key } : {}),
-      'Content-Type': 'application/json',
-      Prefer: 'return=representation',
-    },
+    headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!response.ok) throw new Error('Database request failed: ' + response.status);
-  return response.json() as Promise<T>;
 }
 
 export async function readRoom<T>(id: string) {
-  const rows = await request<Row<T>[]>('enchanted_rooms?id=eq.' + encodeURIComponent(id));
-  return rows[0];
+  const response = await request(id, 'GET');
+  if (!response.ok) throw new Error('Unable to read room');
+  return response.json() as Promise<Row<T> | null>;
 }
 
 export async function createRoom<T>(id: string, secret: string, data: T) {
-  await request('enchanted_rooms', {
-    method: 'POST',
-    body: JSON.stringify({ id, secret, data }),
-  });
+  const response = await request(id, 'POST', { id, secret, data, revision: 0 });
+  if (!response.ok) throw new Error('Unable to create room');
 }
 
 export async function saveRoom<T>(id: string, revision: number, data: T) {
-  const rows = await request<Row<T>[]>('enchanted_rooms?id=eq.' + encodeURIComponent(id) + '&revision=eq.' + revision, {
-    method: 'PATCH',
-    body: JSON.stringify({ revision: revision + 1, data }),
-  });
-  return rows.length === 1;
+  const response = await request(id, 'PATCH', {revision, data});
+  if (response.status === 409) return false;
+  if (!response.ok) throw new Error('Unable to update room');
+  return true;
+}
+
+export async function closeRoom(id: string, revision: number) {
+  const response = await request(id, 'DELETE', {revision});
+  if (response.status === 409) return false;
+  if (!response.ok) throw new Error('Unable to close room');
+  return true;
 }

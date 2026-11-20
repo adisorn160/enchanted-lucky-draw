@@ -1,11 +1,31 @@
 'use client';
 
-import { createClient } from '@supabase/supabase-js';
 import { csvNames } from './lib/roster';
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { examplePrizes, exampleParticipants, money, maskName, MAX_PARTICIPANTS, nextPrizeIndex, drawPosition, type Award, type Prize, type Room, type Spin } from './lib/wheel';
 
 const date = (at:number) => new Date(at).toLocaleString('th-TH',{timeZone:'Asia/Bangkok',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+
+function DrawWheel({names, spin, now}: {names:string[]; spin:Spin|null; now:number}) {
+  const count = Math.max(1, names.length);
+  const step = 360 / count;
+  const palette = ['#583973', '#755090', '#37346a', '#946137'];
+  const gradient = count <= 64
+    ? 'conic-gradient(' + Array.from({length:count}, (_, index) =>
+      `${palette[index % palette.length]} ${index * step}deg ${(index + 1) * step}deg`).join(',') + ')'
+    : `repeating-conic-gradient(#583973 0deg ${step}deg,#37346a ${step}deg ${step * 2}deg)`;
+  const progress = spin ? Math.min(1, Math.max(0, (now - spin.start) / spin.duration)) : 0;
+  const angle = spin ? spin.from + (spin.to - spin.from) * (1 - Math.pow(1 - progress, 3)) : 0;
+  return <div className="party-wheel" aria-label="วงล้อจับฉลาก">
+    <span className="pointer" aria-hidden="true"/>
+    <div className="party-wheel-rotor" style={{background:gradient, transform:`rotate(${angle}deg)`}}>
+      {count <= 24 && names.map((name, index) =>
+        <span key={index} className="party-wheel-label" style={{transform:`rotate(${(index + .5) * step}deg)`}}>{maskName(name)}</span>
+      )}
+    </div>
+    <span className="party-wheel-hub" aria-hidden="true">♜</span>
+  </div>;
+}
 
 function PrizeImage({prize,large=false}:{prize:Prize;large?:boolean}){
   const [failed,setFailed]=useState(false);
@@ -188,7 +208,10 @@ export default function Home(){
   const [namesText,setNamesText]=useState(''),[title,setTitle]=useState(''),[prizes,setPrizes]=useState<Prize[]>(examplePrizes),[editing,setEditing]=useState(false),[search,setSearch]=useState('');
   const [offset,setOffset]=useState(0),[now,setNow]=useState(0),[ready,setReady]=useState(false),[hostRoom,setHostRoom]=useState('');
   const mutation=useRef(0),mutating=useRef(false),stage=useRef<HTMLElement>(null);
-  const liveConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+  const [liveConfigured,setLiveConfigured]=useState<boolean|null>(null);
+  const [drawMode,setDrawMode]=useState<Room['drawMode']>('scroll');
+  const [roomEnded,setRoomEnded]=useState(false);
+  const [confirmClose,setConfirmClose]=useState(false);
   const host=!!room?.host&&!viewOnly,spin=room?.spin||null,spinning=!!spin&&now<spin.start+spin.duration;
   const secondsLeft=Math.max(0,Math.ceil(((room?.nextRoundAt||0)-now)/1000));
   const cooldown=!spinning&&secondsLeft>0;
@@ -202,10 +225,10 @@ export default function Home(){
   const followingPrize=prizePool[followingPrizeIndex];
   const winner=spin&&!spinning?spin.names[spin.winner]:null;
   const inputNames=namesText.split('\n').map(s=>s.trim()).filter(Boolean);
-  const savedPrizes=JSON.stringify(room?.prizes),dirty=!!room&&(waitSeconds!==room.roundWaitSeconds||title!==room.title||JSON.stringify(prizes)!==savedPrizes||JSON.stringify(inputNames)!==JSON.stringify(room.participants));
+  const savedPrizes=JSON.stringify(room?.prizes),dirty=!!room&&(drawMode!==room.drawMode||waitSeconds!==room.roundWaitSeconds||title!==room.title||JSON.stringify(prizes)!==savedPrizes||JSON.stringify(inputNames)!==JSON.stringify(room.participants));
   const completed=(room?.history||[]).filter(h=>h.at<=now);
   const historyRows=completed.filter(h=>`${h.participant} ${h.prize}`.toLowerCase().includes(search.toLowerCase()));
-  const formatSignature=room?JSON.stringify([room.title,room.prizes,room.participants,room.roundWaitSeconds]):'';
+  const formatSignature=room?JSON.stringify([room.title,room.prizes,room.participants,room.roundWaitSeconds,room.drawMode]):'';
 
   useEffect(()=>{
     const params=new URLSearchParams(location.search),rid=params.get('room')||'';
@@ -216,74 +239,63 @@ export default function Home(){
   useEffect(()=>{
     if(!id)return;
     let disposed = false;
-    let pending = false;
-    let refreshAgain = false;
-    let subscribed = false;
     let timer: ReturnType<typeof setTimeout>;
+    let delay = 1500;
     const controller = new AbortController();
     const refresh = async () => {
-      if (disposed) return;
-      if (pending) { refreshAgain = true; return; }
-      pending = true;
-      clearTimeout(timer);
       const generation = mutation.current;
       try {
         const start = Date.now();
         const query = new URLSearchParams({id, viewer: viewOnly ? '1' : '0', history: showHistory ? 'all' : ''});
         const response = await fetch('/api/room?' + query, {signal:controller.signal,cache:'no-store'});
         const data = await response.json() as Room & {error?:string};
+        if (disposed) return;
+        if (response.status === 404) {
+          disposed = true;
+          setRoom(null);
+          setRoomEnded(true);
+          setNetworkError(data.error || 'ห้องนี้ปิดแล้ว');
+          return;
+        }
         if (!response.ok) throw Error(data.error || 'เชื่อมต่อไม่สำเร็จ');
-        if (!disposed && !mutating.current && generation === mutation.current) {
+        if (!mutating.current && generation === mutation.current) {
           setRoom(data);
           setOffset(data.now - (start + Date.now()) / 2);
           setNetworkError('');
         }
+        delay = 1500;
       } catch (e) {
         if (!disposed) setNetworkError((e as Error).message);
+        delay = Math.min(delay * 2, 5000);
       } finally {
-        pending = false;
-        if (!disposed) {
-          const delay = refreshAgain ? 0 : subscribed ? 5000 : 1500;
-          refreshAgain = false;
-          timer = setTimeout(refresh, delay);
-        }
+        if (!disposed) timer = setTimeout(refresh, delay);
       }
     };
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    const client = url && key ? createClient(url, key, {
-      auth: {persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},
-    }) : null;
-    let channel: ReturnType<NonNullable<typeof client>['channel']> | undefined;
-    if (client && /^[a-f0-9-]{36}$/.test(id) && globalThis.crypto?.subtle) {
-      void crypto.subtle.digest('SHA-256', new TextEncoder().encode(id)).then(buffer => {
-        if (disposed) return;
-        const signal = Array.from(new Uint8Array(buffer), value => value.toString(16).padStart(2, '0')).join('');
-        channel = client.channel('room:' + signal)
-          .on('postgres_changes', {event:'UPDATE',schema:'public',table:'enchanted_room_updates',filter:'id=eq.' + signal}, () => void refresh())
-          .subscribe(status => {
-            subscribed = status === 'SUBSCRIBED';
-            void refresh();
-          });
-      }).catch(() => {});
-    }
     void refresh();
     return () => {
       disposed = true;
       controller.abort();
       clearTimeout(timer);
-      if (channel) void client?.removeChannel(channel);
     };
   }, [id,showHistory,viewOnly]);
-  useEffect(()=>{if(!room)return;setWaitSeconds(room.roundWaitSeconds);setTitle(room.title);setPrizes(room.prizes.map(p=>({...p})));setNamesText(room.participants.join('\n'));},[formatSignature]);
+  useEffect(()=>{
+    if (id) return;
+    const controller = new AbortController();
+    fetch('/api/room?status=1',{signal:controller.signal})
+      .then(response=>response.json()).then(result=>setLiveConfigured(result.configured===true))
+      .catch(()=>{if(!controller.signal.aborted)setLiveConfigured(false)});
+    return ()=>controller.abort();
+  },[id]);
+  useEffect(()=>{if(!room)return;setWaitSeconds(room.roundWaitSeconds);setDrawMode(room.drawMode);setTitle(room.title);setPrizes(room.prizes.map(p=>({...p})));setNamesText(room.participants.join('\n'));},[formatSignature]);
   useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),4500);return()=>clearTimeout(t)},[notice]);
 
-  async function act(op:'create'|'config'|'select'|'spin'|'ack',prizeIndex?:number){
+  async function act(op:'create'|'config'|'select'|'spin'|'ack'|'close',prizeIndex?:number){
     setBusy(true);setError('');mutating.current=true;mutation.current++;
     try{
       const started=Date.now();
-      const res=await fetch('/api/room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op,id,accessKey:op==='create'?accessKey:undefined,title,prizes,participants:inputNames,prizeIndex,roundWaitSeconds:waitSeconds,spinId:spin?.id})});
+      const res=await fetch('/api/room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op,id,accessKey:op==='create'?accessKey:undefined,title,prizes,participants:inputNames,prizeIndex,roundWaitSeconds:waitSeconds,drawMode,spinId:spin?.id})});
       const data=await res.json() as Room & {id:string;error?:string};if(!res.ok)throw Error(data.error||'ดำเนินการไม่สำเร็จ');
+      if(op==='close'){window.location.assign('/');return true;}
       setOffset(data.now-(started+Date.now())/2);setNow(data.now);setRoom(data);
       if(op==='create'){
         try{localStorage.setItem('last-host-room',data.id)}catch{}
@@ -313,29 +325,29 @@ export default function Home(){
   }
   const connected=!!room&&!networkError;
   const roomLink='/?room='+encodeURIComponent(id)+(viewOnly?'&view=1':'');
-  const eventFinished=!!room&&room.prizes.length>0&&room.prizes.every(p=>p.awarded)&&!room.breakPending&&!spin&&completed.length>0;
+  const eventFinished=!!room&&room.prizes.length>0&&(room.prizes.every(p=>p.awarded)||room.participants.length===0)&&!room.breakPending&&!spin&&completed.length>0;
   const shownHistory=historyRows.slice(0,showHistory?historyLimit:5);
 
   return <main className={[showHistory?'history-page':'',presentation&&!showHistory?'zoom-mode':'',controller?'controller-mode':'',viewOnly?'viewer-screen':'',!id&&!presentation&&!showHistory?'landing-mode':''].filter(Boolean).join(' ')}>
     {!controller&&!showHistory&&<DrawSound spin={spin} offset={offset} finished={!!winner} finaleKey={eventFinished?id+':'+completed.map(a=>a.spinId).sort().join(','):''}/>}
     {!showHistory&&winner&&spin&&<WinnerPopup roomId={id} spin={spin} key={spin.id} onConfirm={host&&awaitingAck?()=>act('ack'):undefined} busy={busy} error={error} readOnly={viewOnly} controllerResult={controller}/>}
     <header><a className="brand" href="/"><span className="brand-symbol" aria-hidden="true">♜</span><span>Enchanted <span className="brand-yellow">Kingdom</span><small>LUCKY DRAW LIVE</small></span></a><div className="header-actions">{host&&id&&<a className="ghost open-viewer" href={viewerUrl} target="_blank" rel="noopener" onClick={openViewer}>↗ เปิดหน้าจอผู้ชม</a>}{!showHistory&&!viewOnly&&id&&<button className="ghost presentation-toggle" aria-pressed={presentation} onClick={togglePresentation}>{presentation?'← กลับหน้าควบคุม':'▣ โหมดแชร์จอ Zoom'}</button>}{presentation&&<button className="ghost fullscreen-button" onClick={()=>{void document.documentElement.requestFullscreen?.().catch(()=>{})}}>⛶ เต็มจอ</button>}<span className="role-pill"><i/>{id?(host?'ผู้ควบคุม':'รับชมอย่างเดียว'):''}</span>{id&&<button className="ghost" onClick={share}>↗ แชร์ลิงก์ผู้ชม</button>}</div></header>
-    <section className="intro"><div><p className="eyebrow">A LITTLE SPIN. A BIG MOMENT.</p><h1>{showHistory?'ประวัติการรับรางวัล':room?.title||'สุ่มผู้โชคดี'}<span>✦</span></h1><p className="sub">{showHistory?room?.title||'รายชื่อผู้โชคดี รางวัล มูลค่า และเวลา':controller?'หน้าควบคุม · เปิดหน้าจอผู้ชมอีกหน้าต่าง แล้วแชร์หน้าต่างนั้นผ่าน Zoom':'เลือกรางวัล หมุนสุ่มชื่อ แล้วลุ้นไปพร้อมกันทุกหน้าจอ'}</p></div><span className={'connection '+(connected?'online':'')}>{id?(connected?'● เชื่อมต่อสด':'○ กำลังเชื่อมต่อ…'):'✧ YOUR NEXT LUCKY MOMENT'}</span></section>
+    <section className="intro"><div><p className="eyebrow">A LITTLE SPIN. A BIG MOMENT.</p><h1>{showHistory?'ประวัติการรับรางวัล':room?.title||'สุ่มผู้โชคดี'}<span>✦</span></h1><p className="sub">{showHistory?room?.title||'รายชื่อผู้โชคดี รางวัล มูลค่า และเวลา':controller?'หน้าควบคุม · ส่งลิงก์ผู้ชมให้เพื่อนดูสด':'เลือกรางวัล หมุนสุ่มชื่อ แล้วลุ้นไปพร้อมกันทุกหน้าจอ'}</p></div><span className={'connection '+(connected?'online':'')}>{id?(connected?'● เชื่อมต่อสด':'○ กำลังเชื่อมต่อ…'):'✧ YOUR NEXT LUCKY MOMENT'}</span></section>
     {id&&<nav className="room-navigation" aria-label="หน้าห้องกิจกรรม"><a href={roomLink} aria-current={!showHistory?'page':undefined}>{host?'⚙ หน้าควบคุม':'◉ สุ่มสด'}</a><a href={roomLink+'&history=1'} aria-current={showHistory?'page':undefined}>☷ ประวัติรางวัล <span>{room?.totalCount||0}</span></a></nav>}
     {error&&<div role="alert" className="alert">{error}<button aria-label="ปิดข้อความ" onClick={()=>setError('')}>×</button></div>}
-    {networkError&&<div className="alert" role="status">{networkError} · กำลังเชื่อมต่อใหม่</div>}
+    {networkError&&<div className="alert" role="status">{networkError}{!roomEnded&&' · กำลังเชื่อมต่อใหม่'}</div>}
     {notice&&<div className="toast" role="status">{notice}</div>}
-    {!id&&!presentation&&!showHistory&&ready&&<section className="room-start-panel"><div className="castle-horizon" aria-hidden="true"><i/><i/><i/><i/><i/></div><p className="eyebrow">ห้องจับฉลากสด</p><h2>เปิดประตูสู่อาณาจักรแห่งโชค</h2><p>คุณกดสุ่มและรับทราบผลจากหน้าควบคุม ผู้ชมจะเห็นรายชื่อกำลังสุ่มและผู้ชนะบนหน้าจอที่แชร์ผ่าน Zoom โดยอัตโนมัติ</p><div className="screen-explain"><div><b>01 · หน้าควบคุม</b><span>เพิ่มรายชื่อ · กดสุ่ม · รับทราบผล · ดาวน์โหลด CSV</span></div><div><b>02 · หน้าจอผู้ชม</b><span>รางวัล · รายชื่อกำลังสุ่ม · ประกาศผู้ชนะ · เสียงประกอบ</span></div></div>{!liveConfigured&&<p role="status">อยู่ระหว่างตั้งค่าฐานข้อมูลสำหรับการจับฉลากสด</p>}<label htmlFor="access-key">รหัสผู้ควบคุม</label><input id="access-key" className="access-key" type="password" disabled={!liveConfigured} autoComplete="current-password" value={accessKey} onChange={event=>setAccessKey(event.target.value)}/><button className="primary" disabled={busy||!ready||!accessKey||!liveConfigured} onClick={()=>act('create')}>{busy?'กำลังสร้างห้อง…':'＋ สร้างห้องและเข้าหน้าควบคุม'}</button>{hostRoom&&<a className="secondary" href={'/?room='+hostRoom}>กลับหน้าควบคุมห้องล่าสุด ↗</a>}</section>}
-    {controller&&room&&<section className="control-screen-guide"><div className="control-guide-top"><div><h2>หน้าควบคุมสำหรับผู้ดำเนินรายการ</h2><p>เปิดหน้าจอผู้ชมแยกอีกหน้าต่าง แล้วแชร์เฉพาะหน้าต่างนั้นผ่าน Zoom</p></div><a className="primary open-viewer" href={viewerUrl} target="_blank" rel="noopener" onClick={openViewer}>↗ เปิดหน้าจอผู้ชม</a></div><div className="controller-live-summary" aria-live="polite"><div><span>{spinning?'กำลังสุ่ม':winner?'ผลรางวัลรอบล่าสุด':'รางวัลที่กำลังจะแจก'}</span><strong>{roundPrize?.name||'แจกรางวัลครบแล้ว'}</strong><b>฿{money(roundPrize?.value||0)}</b></div><div><span>{winner?'ผู้ได้รับรางวัล':'สถานะ'}</span><strong>{winner?maskName(winner):spinning?'กำลังสุ่มบนหน้าจอผู้ชม…':cooldown?`พักอีก ${secondsLeft} วินาที`:'พร้อมเริ่มสุ่ม'}</strong><small>{awaitingAck?'กดรับทราบด้านล่างเพื่อมาร์กรางวัลและไปรอบถัดไป':`${room.participants.length} สิทธิ์คงเหลือ`}</small></div><div><span>รางวัลรอบถัดไป</span><strong>{followingPrize?.name||'ไม่มีรางวัลถัดไป'}</strong>{followingPrize&&<b>฿{money(followingPrize.value)}</b>}</div></div><p className="controller-note">ทั้งสองหน้าซิงค์จากห้องเดียวกัน · เสียงประกอบเล่นที่หน้าจอผู้ชมเท่านั้น</p></section>}
+    {!id&&!presentation&&!showHistory&&ready&&<section className="room-start-panel"><div className="castle-horizon" aria-hidden="true"><i/><i/><i/><i/><i/></div><p className="eyebrow">ห้องจับฉลากสด</p><h2>เปิดประตูสู่อาณาจักรแห่งโชค</h2><p>กรอกรายชื่อแล้วส่งลิงก์ให้เพื่อนเปิดดูสดบนเครื่องของตัวเอง ห้องมีอายุสูงสุด 8 ชั่วโมง</p><div className="screen-explain"><div><b>01 · หน้าควบคุม</b><span>เพิ่มรายชื่อ · กดสุ่ม · รับทราบผล · ดาวน์โหลด CSV</span></div><div><b>02 · หน้าจอผู้ชม</b><span>รางวัล · รายชื่อกำลังสุ่ม · ประกาศผู้ชนะ · เสียงประกอบ</span></div></div>{liveConfigured===false&&<p role="status">อยู่ระหว่างตั้งค่าห้องจับฉลากสด</p>}<label htmlFor="access-key">รหัสผู้ควบคุม</label><input id="access-key" className="access-key" type="password" disabled={!liveConfigured} autoComplete="current-password" value={accessKey} onChange={event=>setAccessKey(event.target.value)}/><button className="primary" disabled={busy||!ready||!accessKey||!liveConfigured} onClick={()=>act('create')}>{busy?'กำลังสร้างห้อง…':'＋ สร้างห้องและเข้าหน้าควบคุม'}</button>{hostRoom&&<a className="secondary" href={'/?room='+hostRoom}>กลับหน้าควบคุมห้องล่าสุด ↗</a>}</section>}
+    {controller&&room&&<section className="control-screen-guide"><div className="control-guide-top"><div><h2>หน้าควบคุมสำหรับผู้ดำเนินรายการ</h2><p>ส่งลิงก์ผู้ชมให้เพื่อนเปิดบนมือถือหรือคอมพิวเตอร์ของตัวเอง</p></div><a className="primary open-viewer" href={viewerUrl} target="_blank" rel="noopener" onClick={openViewer}>↗ เปิดหน้าจอผู้ชม</a></div><div className="controller-live-summary" aria-live="polite"><div><span>{spinning?'กำลังสุ่ม':winner?'ผลรางวัลรอบล่าสุด':'รางวัลที่กำลังจะแจก'}</span><strong>{roundPrize?.name||'แจกรางวัลครบแล้ว'}</strong><b>฿{money(roundPrize?.value||0)}</b></div><div><span>{winner?'ผู้ได้รับรางวัล':'สถานะ'}</span><strong>{winner?maskName(winner):spinning?'กำลังสุ่มบนหน้าจอผู้ชม…':cooldown?`พักอีก ${secondsLeft} วินาที`:'พร้อมเริ่มสุ่ม'}</strong><small>{awaitingAck?'กดรับทราบด้านล่างเพื่อมาร์กรางวัลและไปรอบถัดไป':`${room.participants.length} สิทธิ์คงเหลือ`}</small></div><div><span>รางวัลรอบถัดไป</span><strong>{followingPrize?.name||'ไม่มีรางวัลถัดไป'}</strong>{followingPrize&&<b>฿{money(followingPrize.value)}</b>}</div></div><p className="controller-note">ทั้งสองหน้าซิงค์จากห้องเดียวกัน · เสียงประกอบเล่นที่หน้าจอผู้ชมเท่านั้น</p></section>}
     {!showHistory&&eventFinished&&<section className="event-finale panel" aria-label="สรุปผู้ชนะทั้งหมด"><Celebration finale/><div className="finale-heading"><p className="eyebrow">ALL OUR LUCKY WINNERS</p><h2>🏆 ยินดีกับผู้โชคดีทุกคน</h2><p>แจกรางวัลครบแล้ว · {completed.length} รางวัล · มูลค่ารวม ฿{money(room?.totalValue||0)}</p></div><ol className="finale-grid">{[...completed].sort((a,b)=>b.value-a.value||a.at-b.at).map(award=>{const prize=prizePool.find(p=>p.name===award.prize&&p.value===award.value)||{name:award.prize,value:award.value};return <li key={award.spinId}><PrizeImage prize={prize}/><div><h3>{award.prize}</h3><p>มูลค่า ฿{money(award.value)}</p><strong>{maskName(award.participant)}</strong></div></li>})}</ol><p className="finale-thanks">ขอบคุณทุกคนที่มาร่วมลุ้นด้วยกัน ✦</p>{host&&<a className="ghost download" href={'/api/room?id='+encodeURIComponent(id)+'&export=csv'}>↓ ดาวน์โหลดรายชื่อผู้ชนะ CSV</a>}</section>}
-    {!showHistory&&!eventFinished&&<div className="main-grid">
+    {!showHistory&&!eventFinished&&!roomEnded&&<div className="main-grid">
       <section className="stage" ref={stage}>
         <div className="stage-top"><span className="live-label"><i/>{spinning?'LIVE DRAW':'THE LUCKY DRAW'}</span><span>{currentNames.length} สิทธิ์ · สุ่มจากทุกสิทธิ์ในตาราง</span></div>
         <PrizeRibbon prizes={room?.prizes||examplePrizes} selectedIndex={currentPrizeIndex}/><div className="round-display">{presentation&&roundPrize&&<div className="zoom-round-art"><PrizeImage prize={roundPrize}/></div>}<span>{spinning?'กำลังหมุนหาผู้รับรางวัล':winner?'รางวัลรอบล่าสุด':'รางวัลที่กำลังจะแจก'}</span><h2>{roundPrize?.name||(room?'แจกรางวัลครบแล้ว':'เลือกรางวัลสำหรับรอบนี้')}</h2><strong>มูลค่า ฿{money(roundPrize?.value||0)}</strong>{winner&&<div className="top-winner">ผู้ได้รับรางวัล <b>{maskName(winner)}</b></div>}</div>
         <div className="next-prize-preview" aria-live="polite">{followingPrize?<><PrizeImage prize={followingPrize}/><div><span>รางวัลรอบถัดไป <small>· รางวัลที่ {String(followingPrizeIndex+1).padStart(2,'0')}</small></span><strong>{followingPrize.name}</strong><b>มูลค่า ฿{money(followingPrize.value)}</b></div><span className="next-prize-arrow" aria-hidden="true">→</span></>:<p>{currentPrizeIndex<0?'✓ แจกรางวัลครบแล้ว':'✦ รอบนี้เป็นรางวัลสุดท้าย'}</p>}</div>
         {id&&<div className={'round-countdown '+(cooldown?'counting':'')} role="status" aria-live="polite">{spinning?<><span>พักระหว่างรอบ</span><strong>{room?.roundWaitSeconds||0} วินาทีหลังผู้ควบคุมรับทราบ</strong></>:awaitingAck?<><span>รอเริ่มเวลาเบรค</span><strong>รอผู้ควบคุมกดรับทราบผลรางวัล</strong></>:cooldown?<><span>เริ่มรอบถัดไปได้ใน</span><strong className="countdown-number">{String(Math.floor(secondsLeft/60)).padStart(2,'0')}:{String(secondsLeft%60).padStart(2,'0')}</strong><small>เตรียมรางวัลรอบถัดไปได้ระหว่างรอ</small></>:<><span>สถานะรอบถัดไป</span><strong>พร้อมเริ่มหมุน</strong></>}</div>}
         {viewOnly&&<ViewerAwards awards={completed} prizes={prizePool}/>}
-        <ParticipantTable names={currentNames} spin={spin} offset={offset} drawing={spinning} slowing={!!spin&&spinning&&now>=spin.start+spin.duration*.65}/>
+        {room?.drawMode==='wheel'?<DrawWheel names={currentNames} spin={spin} now={now}/>:<ParticipantTable names={currentNames} spin={spin} offset={offset} drawing={spinning} slowing={!!spin&&spinning&&now>=spin.start+spin.duration*.65}/>}
         <div className={'result-banner '+(winner?'won':'')} aria-live="polite">
           {spinning?<><span>{now<spin!.start?'เตรียมตัวลุ้น…':'กำลังสุ่มผู้โชคดีจากรายชื่อร่วมลุ้น'}</span><strong>{roundPrize?.name} <em>฿{money(roundPrize?.value||0)}</em></strong></>:winner?<><span>ผู้โชคดีได้รับ {roundPrize?.name}</span><strong>{maskName(winner)}</strong><small>มูลค่า ฿{money(roundPrize?.value||0)} · ✓ บันทึกผลรางวัลแล้ว<br/>นำชื่อผู้ชนะออกแล้ว · เหลือ {room?.participants.length||0} สิทธิ์</small></>:<><span>สุ่มผู้โชคดี 1 คน · คนละหนึ่งสิทธิ์</span><strong>{host?'พร้อมลุ้นรางวัลนี้หรือยัง?':'ใครจะเป็นผู้โชคดีคนต่อไป?'}</strong></>}
         </div>
@@ -346,7 +358,7 @@ export default function Home(){
         {host&&room?<section className="panel host-panel"><div className="panel-heading"><h2><span className="number">01</span> ควบคุมการหมุน</h2><span className="small-badge">HOST ONLY</span></div>
           <label htmlFor="round-prize">รางวัลที่แจกในรอบนี้</label><select id="round-prize" value={room.selectedPrizeIndex} disabled={locked||busy||dirty} onChange={e=>act('select',Number(e.target.value))}>{room.selectedPrizeIndex<0&&<option value={-1}>แจกรางวัลครบแล้ว</option>}{room.prizes.map((p,i)=><option key={i} value={i} disabled={p.awarded}>{p.awarded?'✓ แจกแล้ว · ':''}{p.name} — ฿{money(p.value)}</option>)}</select>
           <button className="primary spin-button" disabled={busy||locked||cooldown||room.participants.length<1||room.selectedPrizeIndex<0||dirty||!connected} onClick={()=>act('spin')}>{busy?'กำลังดำเนินการ…':spinning?'กำลังหมุน…':awaitingAck?'รอรับทราบผลรางวัล':room.selectedPrizeIndex<0?'แจกรางวัลครบแล้ว':cooldown?`รออีก ${secondsLeft} วินาที`:'✳ หมุนสุ่มผู้โชคดี'}</button>{awaitingAck&&<button className="secondary" disabled={busy||!connected} onClick={()=>act('ack')}>รับทราบผลและเริ่มเวลาเบรค</button>}<p className="hint">{dirty?'บันทึกการแก้ไขรายชื่อและรางวัลก่อนเริ่มหมุน':spinning?'รอสุ่มเสร็จก่อนเริ่มรอบถัดไป':'แจกจากมูลค่าน้อยไปหามาก · กดรับทราบเพื่อไปรางวัลถัดไป'}</p>
-          <div className="roster-divider"/><label htmlFor="round-wait">พักระหว่างรอบ (วินาที)</label><input id="round-wait" type="number" min="0" max="3600" step="1" value={waitSeconds} disabled={locked||busy} onChange={e=>setWaitSeconds(e.target.value===''?0:Number(e.target.value))}/><p className="hint">เริ่มนับหลังผู้ควบคุมกดรับทราบ · 0 = ไม่พักระหว่างรอบ<br/>เปลี่ยนเวลาแล้วกดบันทึก · ใช้กับการหมุนครั้งถัดไป</p><div className="roster-divider"/><label htmlFor="participants">รายชื่อร่วมลุ้น <span className="count">{inputNames.length} สิทธิ์</span></label><textarea id="participants" rows={6} placeholder={'@user_01\n@user_02\n@user_03'} value={namesText} disabled={locked||busy} onChange={e=>setNamesText(e.target.value)}/>
+          <div className="roster-divider"/><label htmlFor="draw-mode">รูปแบบการสุ่ม</label><select id="draw-mode" value={drawMode} disabled={locked||busy} onChange={event=>setDrawMode(event.target.value as Room['drawMode'])}><option value="scroll">เลื่อนรายชื่อ</option><option value="wheel">วงล้อ</option></select><label htmlFor="round-wait">พักระหว่างรอบ (วินาที)</label><input id="round-wait" type="number" min="0" max="3600" step="1" value={waitSeconds} disabled={locked||busy} onChange={e=>setWaitSeconds(e.target.value===''?0:Number(e.target.value))}/><p className="hint">เริ่มนับหลังผู้ควบคุมกดรับทราบ · 0 = ไม่พักระหว่างรอบ<br/>เปลี่ยนเวลาแล้วกดบันทึก · ใช้กับการหมุนครั้งถัดไป</p><div className="roster-divider"/><label htmlFor="participants">รายชื่อร่วมลุ้น <span className="count">{inputNames.length} สิทธิ์</span></label><textarea id="participants" rows={6} placeholder={'@user_01\n@user_02\n@user_03'} value={namesText} disabled={locked||busy} onChange={e=>setNamesText(e.target.value)}/>
           <label htmlFor="roster-file">นำเข้ารายชื่อจาก CSV</label>
           <input id="roster-file" type="file" accept=".csv,text/csv" disabled={locked||busy} onChange={async event=>{
             const file=event.target.files?.[0];
@@ -370,12 +382,15 @@ export default function Home(){
         </section>
       </aside>
     </div>}
-    {(!eventFinished||showHistory)&&<section className="records panel"><div className="records-top"><div><p className="eyebrow">EVERY WIN, REMEMBERED</p><h2>บันทึกการแจกรางวัล <span className="count">{room?.totalCount||0}</span></h2></div><div className="records-tools">{id&&<>{showHistory&&<input aria-label="ค้นหาผลรางวัล" placeholder="ค้นหาชื่อ / รางวัล" value={search} onChange={e=>{setSearch(e.target.value);setHistoryLimit(50)}}/>}{host&&<a className="ghost download" href={'/api/room?id='+encodeURIComponent(id)+'&export=csv'}>↓ ดาวน์โหลด CSV</a>}</>}</div></div>
-      <div className="summary-strip"><span>แจกแล้ว <b>{room?.totalCount||0}</b> ครั้ง</span><span>มูลค่ารวม <b>฿{money(room?.totalValue||0)}</b></span><span className="auto-save">✓ บันทึกอัตโนมัติทุกการหมุน</span></div>
+    {(!eventFinished||showHistory)&&!roomEnded&&<section className="records panel"><div className="records-top"><div><p className="eyebrow">EVERY WIN, REMEMBERED</p><h2>บันทึกการแจกรางวัล <span className="count">{room?.totalCount||0}</span></h2></div><div className="records-tools">{id&&<>{showHistory&&<input aria-label="ค้นหาผลรางวัล" placeholder="ค้นหาชื่อ / รางวัล" value={search} onChange={e=>{setSearch(e.target.value);setHistoryLimit(50)}}/>}{host&&<a className="ghost download" href={'/api/room?id='+encodeURIComponent(id)+'&export=csv'}>↓ ดาวน์โหลด CSV</a>}</>}</div></div>
+      <div className="summary-strip"><span>แจกแล้ว <b>{room?.totalCount||0}</b> ครั้ง</span><span>มูลค่ารวม <b>฿{money(room?.totalValue||0)}</b></span><span className="auto-save">ผลย้อนหลังของห้องนี้</span></div>
       {historyRows.length?<div className="table-wrap"><table><thead><tr><th>ผู้ร่วมลุ้น</th><th>รางวัลที่ได้รับ</th><th>มูลค่า (บาท)</th><th>วันเวลา (ไทย)</th></tr></thead><tbody>{shownHistory.map(h=><tr key={h.spinId}><td data-label="ผู้โชคดี"><span className="avatar">{Array.from(h.participant.replace(/^@/,''))[0]||'?'}</span><b>{maskName(h.participant)}</b></td><td data-label="รางวัล">{h.prize}</td><td data-label="มูลค่า" className="value-cell">฿{money(h.value)}</td><td data-label="วันเวลา" className="time-cell">{date(h.at)}</td></tr>)}</tbody></table></div>:<div className="empty-records"><span>♧</span><h3>{search?'ไม่พบรายการที่ค้นหา':'รอผู้โชคดีคนแรกของวันนี้'}</h3><p>{search?'ลองค้นหาด้วยชื่อหรือรางวัลอื่น':'เมื่อสุ่มเสร็จ ผู้โชคดีและรางวัลที่เลือกจะแสดงที่นี่โดยอัตโนมัติ'}</p></div>}
       {showHistory&&historyRows.length>historyLimit&&<button className="secondary history-more" onClick={()=>setHistoryLimit(n=>n+50)}>ดูเพิ่มอีก 50 รายการ</button>}
       {id&&!showHistory&&<a className="secondary history-link" href={roomLink+'&history=1'}>ดูประวัติรางวัลทั้งหมด →</a>}
       {!!room?.totalCount&&<p className="table-note">{showHistory?`แสดง ${shownHistory.length} จาก ${historyRows.length} รายการ${search?' ที่ค้นหา':''}`:'ผลรางวัลล่าสุด 5 รายการ'}{host&&' · ดาวน์โหลด CSV เพื่อเก็บประวัติทั้งหมด'}</p>}
+    </section>}
+    {host&&!viewOnly&&<section className="end-room">
+      {confirmClose?<><p>ปิดห้องและล้างรายชื่อกับผลทั้งหมดใช่ไหม?</p><button className="ghost" disabled={busy} onClick={()=>act('close')}>ปิดห้องและล้างข้อมูล</button><button className="ghost" disabled={busy} onClick={()=>setConfirmClose(false)}>กลับไปห้อง</button></>:<button className="ghost" disabled={busy} onClick={()=>setConfirmClose(true)}>จบงานและปิดห้อง</button>}
     </section>}
     <footer><span><b>Enchanted Kingdom</b> Lucky Draw Live</span><span>ทุกคนลุ้นไปพร้อมกัน ✦</span></footer>
   </main>;

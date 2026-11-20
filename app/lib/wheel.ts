@@ -1,9 +1,12 @@
-export type Prize = { name: string; value: number; image?: string; id?: string; awarded?: boolean };
+export type Prize = { name: string; value: number; image?: string; id?: string; awarded?: boolean; repeatable?: boolean };
 export type Spin = { id: string; participant: string; start: number; duration: number; from: number; to: number; winner: number; names: string[]; prize: Prize };
 export type Award = { spinId: string; participant: string; prize: string; value: number; at: number };
-export type Room = { title: string; prizes: Prize[]; participants: string[]; host: boolean; selectedPrizeIndex: number; roundWaitSeconds: number; nextRoundAt: number; breakPending: boolean; spin: Spin | null; history: Award[]; totalCount: number; totalValue: number; now: number };
+export type Room = { title: string; prizes: Prize[]; participants: string[]; host: boolean; drawMode: 'scroll' | 'wheel'; selectedPrizeIndex: number; roundWaitSeconds: number; nextRoundAt: number; breakPending: boolean; spin: Spin | null; history: Award[]; totalCount: number; totalValue: number; now: number };
 export const MAX_PARTICIPANTS = 2000;
-export const maskName = (name: string) => Array.from(name).slice(0,-3).join('')+'xxx';
+export const maskName = (name: string) => {
+  const chars = Array.from(name);
+  return chars.length > 7 ? chars.slice(0, -3).join('') + 'xxx' : name;
+};
 export const examplePrizes: Prize[] = [
   {name:'Samsung Galaxy S26',value:29900},
   {name:'Samsung Galaxy Watch 8 40mm',value:11900},

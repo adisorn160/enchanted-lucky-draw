@@ -233,3 +233,45 @@ body {
 }
 .castle-horizon i:nth-child(2n) { height: 83%; }
 .castle-horizon i:nth-child(3) { height: 97%; }
+
+.party-wheel {
+  position: relative;
+  width: min(78vw, 360px);
+  aspect-ratio: 1;
+  margin: 28px auto 18px;
+}
+.party-wheel-rotor {
+  position: absolute;
+  inset: 0;
+  border: 6px solid #eac78a;
+  border-radius: 50%;
+  box-shadow: 0 0 32px #ab75d358, inset 0 0 16px #1909258a;
+  transition: transform 190ms linear;
+}
+.party-wheel .pointer { top: -10px; z-index: 2; }
+.party-wheel-label {
+  position: absolute;
+  inset: 0;
+  padding: 8% 41% 0;
+  text-align: center;
+  white-space: nowrap;
+  color: #fff5d8;
+  text-shadow: 0 1px 3px #1a0a25;
+  font-size: 10px;
+  overflow: hidden;
+}
+.party-wheel-hub {
+  position: absolute;
+  inset: 43%;
+  border: 2px solid #f5dba7;
+  border-radius: 50%;
+  background: #241637;
+  display: grid;
+  place-items: center;
+  color: #f5dba7;
+  font-size: 23px;
+}
+.end-room { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 18px 0; }
+@media (prefers-reduced-motion: reduce) {
+  .party-wheel-rotor { transition: none; }
+}

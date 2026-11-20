@@ -1,10 +1,10 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { createRoom, databaseReady, readRoom, saveRoom } from '../../lib/store';
+import { closeRoom, createRoom, roomServiceReady, readRoom, saveRoom } from '../../lib/store';
 import { nameKey } from '../../lib/roster';
 import { examplePrizes, MAX_PARTICIPANTS, maskName, nextPrizeIndex, type Prize, type Spin, type Award } from '../../lib/wheel';
 export const dynamic = 'force-dynamic';
 const reply = (data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
-type Stored = {title:string; prizeCatalogVersion?:number; progressionVersion?:number; prizes?:Prize[]; items?:string[]; participants?:string[]; selectedPrizeIndex?:number; roundWaitSeconds?:number; nextRoundAt?:number; breakPending?:boolean; spin:Spin|null; history?:Array<Award & {label?:string}>};
+type Stored = {title:string; prizeCatalogVersion?:number; progressionVersion?:number; prizes?:Prize[]; items?:string[]; participants?:string[]; selectedPrizeIndex?:number; roundWaitSeconds?:number; drawMode?:'scroll'|'wheel'; nextRoundAt?:number; breakPending?:boolean; spin:Spin|null; history?:Array<Award & {label?:string}>};
 const validId = (id: unknown): id is string =>
   typeof id === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id);
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -18,14 +18,14 @@ const isHost = (req: Request, id: string, secret: string) => {
   const token = tokenFrom(req, id);
   return Boolean(token && matches(hash(token), secret));
 };
-const unavailable = () => reply({error:'ระบบสดยังไม่เชื่อมต่อฐานข้อมูล'},503);
-type ReadyRoom=Stored & {prizes:Prize[];participants:string[];selectedPrizeIndex:number;roundWaitSeconds:number;nextRoundAt:number;breakPending:boolean};
+const unavailable = () => reply({error:'กำลังตั้งค่าบริการห้องจับฉลากสด'},503);
+type ReadyRoom=Stored & {prizes:Prize[];participants:string[];selectedPrizeIndex:number;roundWaitSeconds:number;drawMode:NonNullable<Stored['drawMode']>;nextRoundAt:number;breakPending:boolean};
 function normalized(raw:string):ReadyRoom{
   const data=JSON.parse(raw);
   const prizes:Prize[]=(data.prizeCatalogVersion===2&&data.prizes?.length?data.prizes:examplePrizes).map((p:Prize,i:number)=>({...p,id:p.id||`prize-${i}`}));
   const spin=data.spin?.names&&data.spin?.prize?data.spin:null;
   const selected=data.progressionVersion===1?data.selectedPrizeIndex:spin&&data.breakPending?data.selectedPrizeIndex:nextPrizeIndex(prizes);
-  return {...data,progressionVersion:1,prizeCatalogVersion:2,breakPending:data.breakPending??false,roundWaitSeconds:data.roundWaitSeconds??10,nextRoundAt:data.nextRoundAt??0,prizes,participants:data.participants||[],selectedPrizeIndex:typeof selected==='number'&&selected>=0&&selected<prizes.length&&!prizes[selected].awarded?selected:nextPrizeIndex(prizes),spin};
+  return {...data,drawMode:data.drawMode==='wheel'?'wheel':'scroll',progressionVersion:1,prizeCatalogVersion:2,breakPending:data.breakPending??false,roundWaitSeconds:data.roundWaitSeconds??10,nextRoundAt:data.nextRoundAt??0,prizes,participants:data.participants||[],selectedPrizeIndex:typeof selected==='number'&&selected>=0&&selected<prizes.length&&!prizes[selected].awarded?selected:nextPrizeIndex(prizes),spin};
 }
 function legacyAwards(data:Stored):Award[]{return (data.history||[]).map(h=>({spinId:h.spinId,participant:h.participant||'ไม่ระบุชื่อ (ผลเดิม)',prize:h.prize||h.label||'รางวัลเดิม',value:h.value||0,at:h.at}));}
 function roomView(data: ReadyRoom, host: boolean, allHistory = false) {
@@ -35,7 +35,7 @@ function roomView(data: ReadyRoom, host: boolean, allHistory = false) {
   const active = spin && now < spin.start + spin.duration;
   const displayName = (name: string) => host ? name : maskName(name);
   return {
-    host, title, prizes, selectedPrizeIndex, roundWaitSeconds, nextRoundAt, breakPending, now,
+    host, drawMode:data.drawMode, title, prizes, selectedPrizeIndex, roundWaitSeconds, nextRoundAt, breakPending, now,
     participants: (active ? spin.names : participants).map(displayName),
     spin: spin && {...spin, participant: displayName(spin.participant), names: spin.names.map(displayName)},
     history: history.slice(0, allHistory ? undefined : 100)
@@ -47,10 +47,13 @@ function roomView(data: ReadyRoom, host: boolean, allHistory = false) {
 const csvCell=(v:unknown)=>'"'+String(v).replace(/^[=+@\-\t\r]/,"'$&").replace(/"/g,'""')+'"';
 export async function GET(req:Request){try{
   const url=new URL(req.url),id=url.searchParams.get('id');
+  if (url.searchParams.has('status')) {
+    return reply({configured: roomServiceReady() && (process.env.ADMIN_ACCESS_KEY?.length ?? 0) >= 24});
+  }
   if (!validId(id)) return reply({error:'ไม่พบห้อง'},404);
-  if (!databaseReady()) return unavailable();
+  if (!roomServiceReady()) return unavailable();
   const row = await readRoom<Stored>(id);
-  if (!row) return reply({error:'ไม่พบห้องนี้ กรุณาตรวจสอบลิงก์'},404);
+  if (!row) return reply({error:'ห้องนี้ปิดแล้ว หมดอายุ หรือไม่พบลิงก์'},404);
   const host = url.searchParams.get('viewer') !== '1' && isHost(req, id, row.secret);
   const data = normalized(JSON.stringify(row.data));
   if (url.searchParams.get('export') === 'csv') {
@@ -68,7 +71,7 @@ export async function POST(req: Request) {
   if (req.headers.get('sec-fetch-site') === 'cross-site' || !req.headers.get('content-type')?.startsWith('application/json')) {
     return reply({error:'คำขอไม่ถูกต้อง'},403);
   }
-  if (!databaseReady()) return unavailable();
+  if (!roomServiceReady()) return unavailable();
   try {
   const raw = await req.text();
   if (raw.length > 300000) return reply({error:'ข้อมูลมีขนาดใหญ่เกินไป'},413);
@@ -86,7 +89,7 @@ export async function POST(req: Request) {
       return reply({error:'รหัสผู้ควบคุมไม่ถูกต้อง'},403);
     }
     const id = crypto.randomUUID(), token = crypto.randomUUID() + crypto.randomUUID();
-    const data = {title:'Enchanted Kingdom Lucky Draw Live',prizeCatalogVersion:2,progressionVersion:1,prizes:examplePrizes.map((p,i)=>({...p,id:`prize-${i}`})),participants:[],selectedPrizeIndex:nextPrizeIndex(examplePrizes),roundWaitSeconds:10,nextRoundAt:0,breakPending:false,spin:null};
+    const data: ReadyRoom = {title:'Enchanted Kingdom Lucky Draw Live',prizeCatalogVersion:2,progressionVersion:1,prizes:[{id:'party-draw',name:'จับฉลาก',value:0,repeatable:true}],participants:[],selectedPrizeIndex:0,roundWaitSeconds:0,nextRoundAt:0,breakPending:false,drawMode:'scroll',spin:null};
     await createRoom(id, hash(token), data);
     const response = reply({id,...roomView(data,true)});
     const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
@@ -96,6 +99,12 @@ export async function POST(req: Request) {
   if (!validId(body.id) || !tokenFrom(req, body.id)) return reply({error:'ไม่มีสิทธิ์ควบคุม'},403);
   const row = await readRoom<Stored>(body.id);
   if (!row || !isHost(req, body.id, row.secret)) return reply({error:'ไม่มีสิทธิ์ควบคุมห้องนี้'},403);
+  if (body.op === 'close') {
+    if (!await closeRoom(body.id, row.revision)) return reply({error:'มีคำสั่งพร้อมกัน กรุณาลองใหม่'},409);
+    const response = reply({closed:true});
+    response.headers.set('Set-Cookie', sessionName(body.id) + '=; Path=/api/room; HttpOnly; SameSite=Strict; Max-Age=0');
+    return response;
+  }
   const data = normalized(JSON.stringify(row.data)), now = Date.now();
   if(data.spin&&now<data.spin.start+data.spin.duration)return reply({error:'รอให้วงล้อหยุดก่อน'},409);
   if(body.op==='ack'&&data.breakPending&&body.spinId!==data.spin?.id)return reply({error:'ผลรางวัลรอบนี้เปลี่ยนแล้ว กรุณารับทราบผลรอบล่าสุด'},409);
@@ -116,6 +125,7 @@ export async function POST(req: Request) {
     const wait=body.roundWaitSeconds??data.roundWaitSeconds;
     if(typeof wait!=='number'||!Number.isInteger(wait)||wait<0||wait>3600)return reply({error:'ตั้งเวลาระหว่างรอบเป็นจำนวนเต็ม 0–3,600 วินาที'},400);
     data.roundWaitSeconds=wait;
+    if (body.drawMode === 'scroll' || body.drawMode === 'wheel') data.drawMode = body.drawMode;
     const prizes=body.prizes;
     if(!Array.isArray(prizes)||prizes.length<1||prizes.length>30||prizes.some(p=>!p||typeof p.name!=='string'||!p.name.trim()||p.name.trim().length>60||typeof p.value!=='number'||!Number.isFinite(p.value)||p.value<0||p.value>100000000||Math.abs(p.value*100-Math.round(p.value*100))>0.00001))return reply({error:'ใส่รางวัล 1–30 แบบ ชื่อไม่เกิน 60 ตัวอักษร และมูลค่า 0–100,000,000 บาท (ทศนิยมไม่เกิน 2 ตำแหน่ง)'},400);
     if(!Array.isArray(body.participants)||body.participants.some(p=>typeof p!=='string'||!p.trim()||p.trim().length>80))return reply({error:'ใส่ชื่อผู้ร่วมลุ้นหนึ่งชื่อต่อบรรทัด ชื่อละไม่เกิน 80 ตัวอักษร'},400);
@@ -125,15 +135,15 @@ export async function POST(req: Request) {
     if(prizes.some(p=>p.image!==undefined&&(typeof p.image!=='string'||p.image.length>2000||!(/^(https:\/\/|\/prizes\/)/.test(p.image)))))return reply({error:'ลิงก์รูปต้องเป็น HTTPS'},400);
     const known=new Map(data.prizes.map(p=>[p.id,p]));
     const ids=new Set<string>();
-    data.prizes=prizes.map(p=>{const existing=known.get(p.id);const id=existing?.id&&!ids.has(existing.id)?existing.id:crypto.randomUUID();ids.add(id);return {name:p.name.trim(),value:p.value,id,awarded:existing?.awarded||false,...(p.image?{image:p.image}:{})}});
+    data.prizes=prizes.map(p=>{const existing=known.get(p.id);const id=existing?.id&&!ids.has(existing.id)?existing.id:crypto.randomUUID();ids.add(id);return {name:p.name.trim(),value:p.value,id,awarded:existing?.awarded||false,...(existing?.repeatable&&p.name.trim()===existing.name?{repeatable:true}:{}),...(p.image?{image:p.image}:{})}});
     data.selectedPrizeIndex=nextPrizeIndex(data.prizes);
     data.prizeCatalogVersion=2;
     data.title=typeof body.title==='string'&&body.title.trim()?body.title.trim().slice(0,80):'Lucky Live';
     data.spin=null; // Award records keep their original prize name and value.
   }else if(body.op==='ack'){
     const awardedIndex=data.prizes.findIndex(p=>p.id===data.spin?.prize.id);
-    if(awardedIndex>=0)data.prizes[awardedIndex].awarded=true;
-    else if(data.selectedPrizeIndex>=0)data.prizes[data.selectedPrizeIndex].awarded=true;
+    const selected = awardedIndex >= 0 ? awardedIndex : data.selectedPrizeIndex;
+    if (selected >= 0 && !data.prizes[selected].repeatable) data.prizes[selected].awarded=true;
     data.selectedPrizeIndex=nextPrizeIndex(data.prizes);
     data.breakPending=false;
     data.nextRoundAt=now+data.roundWaitSeconds*1000;
@@ -150,7 +160,7 @@ export async function POST(req: Request) {
     let random;do{random=crypto.getRandomValues(new Uint32Array(1))[0]}while(random>=max);
     const winner=random%n,from=data.spin?.to||0,target=(360-(winner+.5)*360/n)%360;
     const prize=data.prizes[data.selectedPrizeIndex];
-    const spin:Spin={id:crypto.randomUUID(),participant:data.participants[winner],start:now+1800,duration:7000,from,to:from+2160+((target-from%360+360)%360),winner,names:[...data.participants],prize:{...prize}};
+    const spin:Spin={id:crypto.randomUUID(),participant:data.participants[winner],start:now+2800,duration:7000,from,to:from+2160+((target-from%360+360)%360),winner,names:[...data.participants],prize:{...prize}};
     data.spin=spin;
     data.participants=data.participants.filter(name=>name!==spin.participant);
     data.nextRoundAt=0;
