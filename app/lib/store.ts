@@ -8,12 +8,21 @@ async function request(id: string, method: string, body?: unknown) {
   const url = process.env.ROOM_SERVICE_URL;
   const key = process.env.ROOM_SERVICE_KEY;
   if (!url || !key) throw new Error('Missing room service configuration');
-  return fetch(new URL('/rooms/' + encodeURIComponent(id), url), {
+  const response = await fetch(new URL('/rooms/' + encodeURIComponent(id), url), {
     method,
     cache: 'no-store',
     headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(8000),
+  }).catch(error => {
+    const code = error?.cause?.code ?? error?.name;
+    console.warn('Room service request failed', method, typeof code === 'string' && /^[A-Z0-9_]+$/i.test(code) ? code : 'Unknown');
+    throw error;
   });
+  if (!response.ok && response.status !== 409) {
+    console.warn('Room service returned an error', method, response.status);
+  }
+  return response;
 }
 
 export async function readRoom<T>(id: string) {
