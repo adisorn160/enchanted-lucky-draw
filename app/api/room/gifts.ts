@@ -8,25 +8,21 @@ export type GiftState = Pick<GiftRoom, 'kind' | 'title' | 'participants' | 'draw
   pairs: GiftRoom['pairs'];
 };
 
+function nextGiver(room: GiftState) {
+  const index = room.pairs.length;
+  if (index >= room.participants.length) return null;
+  // Let a room started under the previous rules finish its existing assignments.
+  if (room.assignments.length) return room.participants[index];
+  return room.pairs.at(-1)?.recipient ?? room.participants[0] ?? null;
+}
+
 export function giftView(room: GiftState, host: boolean, now = Date.now()): GiftRoom {
   const {kind,title,participants,drawMode,spin} = room;
   return {
     kind,title,participants,drawMode,spin,host,now,
     pairs: room.pairs.filter(pair => pair.at <= now),
-    nextGiver: participants[room.pairs.length] ?? null,
+    nextGiver: nextGiver(room),
   };
-}
-
-function assignRecipients(names: string[]) {
-  // Reject permutations with a self-match. Each valid permutation is equally likely.
-  for (;;) {
-    const recipients = [...names];
-    for (let i = recipients.length - 1; i > 0; i--) {
-      const j = randomInt(i + 1);
-      [recipients[i], recipients[j]] = [recipients[j], recipients[i]];
-    }
-    if (recipients.every((name, i) => name !== names[i])) return recipients;
-  }
 }
 
 export function applyGiftAction(room: GiftState, body: Record<string, unknown>, now: number) {
@@ -52,16 +48,22 @@ export function applyGiftAction(room: GiftState, body: Record<string, unknown>, 
   if (body.op !== 'spin') return {status:400,error:'คำสั่งไม่ถูกต้อง'};
   if (room.participants.length < 2) return {status:400,error:'ต้องมีอย่างน้อย 2 คน'};
   const index = room.pairs.length;
-  const giver = room.participants[index];
+  const giver = nextGiver(room);
   if (!giver) return {status:409,error:'จับคู่ครบทุกคนแล้ว'};
   if (body.round !== index) return {status:409,error:'รอบจับคู่เปลี่ยนแล้ว กรุณาลองใหม่'};
 
-  if (!room.assignments.length) room.assignments = assignRecipients(room.participants);
-  const recipient = room.assignments[index];
   const used = new Set(room.pairs.map(pair => pair.recipient));
-  const names = room.participants.filter(name => name !== giver && !used.has(name));
+  // Keep the first giver available for the final round, so the chain cannot
+  // close while there are still people waiting to give a gift.
+  const starter = room.participants[0];
+  const lastRound = index === room.participants.length - 1;
+  const names = room.participants.filter(name =>
+    name !== giver && !used.has(name) && (room.assignments.length > 0 || lastRound || name !== starter)
+  );
+  const winner = room.assignments.length ? names.indexOf(room.assignments[index]) : randomInt(names.length);
+  const recipient = names[winner];
   const spin: GiftSpin = {
-    id:crypto.randomUUID(), giver, names, winner:names.indexOf(recipient),
+    id:crypto.randomUUID(), giver, names, winner,
     start:now+2800, duration:7000,
   };
   room.spin = spin;

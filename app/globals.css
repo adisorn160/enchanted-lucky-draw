@@ -488,7 +488,7 @@ body:has(.gift-exchange) {
   min-height:330px;
   background:
     linear-gradient(155deg,#493063cf,#2e1c3feb),
-    url('/art/lantern-castle-560.webp') center 35%/cover, #38254f;
+    url('/art/cinderella-castle-520.webp') center 42%/cover, #38254f;
   box-shadow:0 18px 42px #58386822;
   color:#fff3f1;
 }
@@ -531,4 +531,75 @@ body:has(.gift-exchange) {
   .gift-exchange .gift-pair-list td,
   .gift-exchange .gift-pair-list td:first-child { display:table-cell; width:auto; padding:10px 8px; margin:0; text-align:left; border-bottom:1px solid #b58ebc45; }
   .gift-exchange .gift-pair-list td::before { display:none; }
+}
+
+.gift-draw-dialog {
+  position:fixed;
+  inset:0;
+  margin:auto;
+  width:min(530px,calc(100% - 24px));
+  max-height:calc(100dvh - 28px);
+  overflow:auto;
+  padding:clamp(24px,5vw,42px) clamp(12px,4vw,32px) 18px;
+  border:1px solid #e4c38c;
+  border-radius:24px;
+  background:linear-gradient(150deg,#5c397c,#382348 75%);
+  color:#fff6ee;
+  box-shadow:0 23px 78px #190b31a8;
+  text-align:center;
+}
+.gift-draw-dialog[open] { animation:gift-dialog-rise .35s ease-out both; }
+.gift-draw-dialog::backdrop { background:#241632ab; backdrop-filter:blur(3px); }
+.gift-draw-dialog h2 { margin:4px 30px 10px; font-size:clamp(18px,4.5vw,30px); font-weight:750; line-height:1.35; overflow-wrap:anywhere; }
+.gift-draw-dialog .party-wheel { width:min(100%,340px,57dvh); margin-top:20px; }
+.gift-draw-dialog .gift-pair-result { padding-block:24px; }
+.gift-draw-close {
+  position:absolute;
+  right:12px;
+  top:12px;
+  width:44px;
+  height:44px;
+  padding:0;
+  border:1px solid #f3d8eda0;
+  border-radius:50%;
+  background:#fff2;
+  color:#fff6ee;
+  font:400 24px/1 Georgia,serif;
+}
+.gift-draw-dialog :focus-visible { outline-color:#fbd88d; }
+@keyframes gift-dialog-rise {
+  from { opacity:0; transform:translateY(24px) scale(.96); }
+  to { opacity:1; transform:translateY(0) scale(1); }
+}
+@media(prefers-reduced-motion:reduce) { .gift-draw-dialog[open] { animation:none; } }
+
+
+.gift-cinderella-art img { aspect-ratio:900/846; object-fit:contain; }
+.gift-cinderella-art figcaption {
+  background:#fff7ed;
+  color:#634c68;
+  text-align:center;
+  font-size:11px;
+  padding:5px 8px;
+}
+.gift-storybook-gallery {
+  display:grid;
+  grid-template-columns:minmax(0,2.15fr) minmax(0,1fr);
+  align-items:center;
+  gap:12px;
+  margin:clamp(24px,6vw,56px) auto 0;
+  max-width:850px;
+}
+.gift-storybook-gallery figure {
+  margin:0;
+  border:3px solid #fff8ee;
+  border-radius:16px;
+  overflow:hidden;
+  box-shadow:0 8px 25px #57346b26;
+}
+.gift-storybook-gallery img { display:block; width:100%; height:auto; }
+.gift-storybook-gallery p { grid-column:1/-1; margin:0; text-align:center; color:#6a5178; font-size:11px; }
+@media(max-width:540px) {
+  .gift-storybook-gallery { grid-template-columns:minmax(0,1fr); gap:12px; }
+  .gift-storybook-gallery figure:nth-child(2) { width:min(100%,280px); margin:auto; }
 }

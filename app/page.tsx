@@ -53,6 +53,36 @@ function GiftAnimation({spin, now, mode}: {spin:GiftSpin; now:number; mode:GiftR
   </div>;
 }
 
+function StorybookGallery() {
+  return <section className="gift-storybook-gallery" aria-label="ภาพตัวละคร">
+    <figure>
+      <img src="/art/storybook-characters.webp" width={850} height={446} loading="lazy" alt="ภาพรวมตัวละครดิสนีย์จากหลายเรื่อง"/>
+    </figure>
+    <figure>
+      <img src="/art/storybook-princesses.webp" width={387} height={516} loading="lazy" alt="ภาพตัวละครเจ้าหญิงดิสนีย์"/>
+    </figure>
+    <p>ภาพตัวละคร © Disney</p>
+  </section>;
+}
+
+function GiftDrawDialog({spin,mode,now}: {spin:GiftSpin; mode:GiftRoom['drawMode']; now:number}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const revealed = now >= spin.start + spin.duration;
+  useEffect(()=>{
+    const element = dialog.current;
+    if (element && !element.open) element.showModal();
+  },[]);
+
+  return <dialog ref={dialog} className="gift-draw-dialog" aria-labelledby="gift-draw-heading">
+    <button className="gift-draw-close" type="button" aria-label="ปิดหน้าต่างสุ่ม" onClick={()=>dialog.current?.close()}>×</button>
+    <span className="gift-stage-spark" aria-hidden="true">✦</span>
+    <h2 id="gift-draw-heading">{revealed?'จับคู่ได้แล้ว':`${spin.giver} จะให้ของขวัญกับใคร?`}</h2>
+    {revealed
+      ? <div className="gift-pair-result" role="status"><strong>{spin.giver}</strong><span>ให้ของขวัญกับ</span><strong>{spin.names[spin.winner]}</strong></div>
+      : <GiftAnimation spin={spin} now={now} mode={mode}/>}
+  </dialog>;
+}
+
 export default function GiftExchange() {
   const [route,setRoute]=useState<{id:string;viewer:boolean}|null>(null);
   const [room,setRoom]=useState<GiftRoom|null>(null);
@@ -62,7 +92,7 @@ export default function GiftExchange() {
   const [configured,setConfigured]=useState(true);
   const [names,setNames]=useState('');
   const [title,setTitle]=useState('');
-  const [mode,setMode]=useState<GiftRoom['drawMode']>('scroll');
+  const [mode,setMode]=useState<GiftRoom['drawMode']>('wheel');
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
@@ -152,6 +182,7 @@ export default function GiftExchange() {
     ? [...pairs,{giver:spin.giver,recipient:spin.names[spin.winner],at:revealAt}]
     : pairs;
   const lastPair=shownPairs.at(-1);
+  const showDrawDialog=Boolean(spin&&now<revealAt+3000);
   const locked=active||shownPairs.length>0;
 
   async function act(op:'create'|'config'|'spin'|'close') {
@@ -206,16 +237,19 @@ export default function GiftExchange() {
         {!configured&&<p>อยู่ระหว่างตั้งค่าห้องสด</p>}
         {canCreate?<div className="gift-actions"><button className="primary" disabled={busy} onClick={()=>act('create')}>สร้างห้องแลกของขวัญ</button>{lastRoom&&<a className="ghost" href={'/?room='+encodeURIComponent(lastRoom)}>กลับห้องล่าสุด</a>}</div>:route&&<p className="gift-entry-note">เปิดลิงก์แอดมินส่วนตัวเพื่อสร้างห้อง หรือเปิดลิงก์ผู้ชมที่ได้รับเพื่อดูสด</p>}
       </div>
-      <div className="gift-hero-art">
-        <img src="/art/lantern-castle-960.webp"
-          srcSet="/art/lantern-castle-560.webp 560w, /art/lantern-castle-960.webp 960w"
+      <figure className="gift-hero-art gift-cinderella-art">
+        <img src="/art/cinderella-castle-900.webp"
+          srcSet="/art/cinderella-castle-520.webp 520w, /art/cinderella-castle-900.webp 900w"
           sizes="(max-width: 720px) 92vw, 560px"
-          width={960} height={720} fetchPriority="high"
-          alt="ภาพวาดปราสาทสีชมพูยามค่ำ พร้อมโคมไฟและกล่องของขวัญ"/>
-      </div>
+          width={900} height={846} fetchPriority="high"
+          alt="ภาพวาดปราสาทซินเดอเรลล่าหลังคาสีฟ้า พร้อมรถม้า"/>
+        <figcaption>Cinderella Castle · © Disney</figcaption>
+      </figure>
     </section>}
+    {!route?.id&&<StorybookGallery/>}
     {route?.id&&!room&&!closed&&!error&&<p role="status">กำลังเปิดห้องจับฉลาก…</p>}
     {room&&<>
+      {spin&&showDrawDialog&&<GiftDrawDialog key={spin.id} spin={spin} mode={room.drawMode} now={now}/>}
       <div className="gift-room-heading">
         <div><h1>{room.title}</h1><p>จับคู่แล้ว {shownPairs.length} จาก {room.participants.length} คน</p></div>
         {room.host&&<div className="gift-actions"><button className="ghost" onClick={copyViewer}>คัดลอกลิงก์ผู้ชม</button><a className="ghost" href={share} target="_blank" rel="noopener">เปิดหน้าผู้ชม</a></div>}
@@ -225,7 +259,7 @@ export default function GiftExchange() {
         <section className="stage gift-stage" aria-label="ผลจับฉลาก">
           <span className="gift-stage-spark" aria-hidden="true">✦</span>
           <p className="gift-stage-label">{active?'กำลังสุ่มผู้รับ':lastPair?'คู่ล่าสุด':'พร้อมจับคู่'}</p>
-          {active&&room.spin?<><h2>{room.spin.giver} จะให้ของขวัญกับใคร?</h2><GiftAnimation spin={room.spin} now={now} mode={room.drawMode}/></>:
+          {active&&room.spin?<h2>{room.spin.giver} จะให้ของขวัญกับใคร?</h2>:
             lastPair?<div className="gift-pair-result" aria-live="polite"><strong>{lastPair.giver}</strong><span>ให้ของขวัญกับ</span><strong>{lastPair.recipient}</strong></div>:
             <h2>{room.nextGiver?`ผู้ให้คนแรกคือ ${room.nextGiver}`:'รอรายชื่อผู้ร่วมแลกของขวัญ'}</h2>}
           {!active&&shownPairs.length>0&&<p>{room.nextGiver?`ผู้ให้คนถัดไปคือ ${room.nextGiver}`:'จับคู่ครบทุกคนแล้ว'}</p>}
@@ -255,6 +289,7 @@ export default function GiftExchange() {
         <div className="gift-room-heading"><h2>คู่แลกของขวัญ</h2>{room.host&&<a className="ghost" href={exportUrl}>ดาวน์โหลด CSV</a>}</div>
         <table><thead><tr><th scope="col">ผู้ให้</th><th scope="col">ผู้รับ</th></tr></thead><tbody>{shownPairs.map(pair=><tr key={pair.giver}><td>{pair.giver}</td><td>{pair.recipient}</td></tr>)}</tbody></table>
       </section>}
+      {!room.host&&<StorybookGallery/>}
       {room.host&&<section className="end-room">{confirmClose?<><span>ปิดห้องและล้างผลทั้งหมด?</span><button className="ghost" disabled={busy} onClick={()=>act('close')}>ปิดห้อง</button><button className="ghost" onClick={()=>setConfirmClose(false)}>ยกเลิก</button></>:<button className="ghost" onClick={()=>setConfirmClose(true)}>จบงานและปิดห้อง</button>}</section>}
     </>}
   </main>;

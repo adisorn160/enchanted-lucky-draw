@@ -14,12 +14,28 @@ registerHooks({
 
 const { csvNames, nameKey } = await import('../app/lib/roster.ts');
 const { GET, POST } = await import('../app/api/room/route.ts');
+const { applyGiftAction, giftView } = await import('../app/api/room/gifts.ts');
 
 test('CSV accepts BOM, reordered headers, and quoted fields', () => {
   assert.deepEqual(csvNames('\ufeffignored,username\r\n1,"name, with ""quotes"""\r\n2,@ส้ม'), ['name, with "quotes"', '@ส้ม']);
   assert.deepEqual(csvNames('@Mint\n@Fah'), ['@Mint', '@Fah']);
   assert.throws(() => csvNames('name\n"unfinished'));
   assert.equal(nameKey(' ＠Ｍｉｎｔ '), nameKey('mint'));
+});
+
+test('the recipient takes the next turn and the chain ends at the first giver', () => {
+  const state = {kind:'gift',title:'Gift exchange',participants:['หนึ่ง','สอง','สาม','สิบห้า'],
+    drawMode:'wheel',assignments:[],pairs:[{giver:'หนึ่ง',recipient:'สิบห้า',at:1000}],spin:null};
+  assert.equal(giftView(state,false,1001).nextGiver,'สิบห้า');
+  for (let round=1; round<4; round++) {
+    const previous = state.pairs.at(-1);
+    assert.equal(applyGiftAction(state,{op:'spin',round},previous.at+1),undefined);
+    assert.equal(state.spin.giver,previous.recipient);
+    assert(!state.spin.names.includes(state.spin.giver));
+    if (round<3) assert(!state.spin.names.includes('หนึ่ง'));
+  }
+  assert.equal(state.pairs.at(-1).recipient,'หนึ่ง');
+  assert.equal(giftView(state,false,state.pairs.at(-1).at).nextGiver,null);
 });
 
 test('temporary Worker rooms share a single draw across 20 viewers and clear on close', async t => {
@@ -93,6 +109,7 @@ test('temporary Worker rooms share a single draw across 20 viewers and clear on 
   assert.equal(final.pairs.length,4);
   assert.equal(new Set(final.pairs.map(pair=>pair.recipient)).size,4);
   assert(final.pairs.every(pair=>pair.giver!==pair.recipient));
+  assert(final.pairs.every((pair,index)=>pair.recipient===final.pairs[(index+1)%final.pairs.length].giver));
   assert.match(await (await read('&export=csv',{Cookie:cookie})).text(), /"ผู้ให้","ผู้รับ"/);
   assert.equal((await worker.fetch(new Request('https://worker.invalid/rooms/'+id),env)).status,403);
   assert.equal((await send({op:'close',id})).status,403);

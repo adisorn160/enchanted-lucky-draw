@@ -122,7 +122,7 @@ export async function POST(req: Request) {
   if (body.op === 'create') {
     if (!canCreate(req, creatorKey())) return reply({error:'เปิดลิงก์แอดมินส่วนตัวก่อนสร้างห้อง'},403);
     const id = crypto.randomUUID(), token = crypto.randomUUID() + crypto.randomUUID();
-    const data: GiftState = {kind:'gift',title:'Enchanted Kingdom Gift Exchange',participants:[],drawMode:'scroll',assignments:[],pairs:[],spin:null};
+    const data: GiftState = {kind:'gift',title:'Enchanted Kingdom Gift Exchange',participants:[],drawMode:'wheel',assignments:[],pairs:[],spin:null};
     await createRoom(id, hash(token), data);
     const response = reply({id,...giftView(data,true)});
     response.headers.set('Set-Cookie', cookie(sessionName(id), token));
