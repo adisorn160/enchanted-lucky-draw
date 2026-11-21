@@ -47,10 +47,10 @@ function DisneyParkMusic({onChange}: {onChange:(expanded:boolean)=>void}) {
     <summary>♫ เพลงจากสวนสนุกดิสนีย์</summary>
     {open&&<div className="gift-park-player">
       <p><strong>Starlight Anthem</strong> · ขบวนพาเหรด Disney Starlight ที่ Magic Kingdom</p>
-      <iframe title="Starlight Anthem — Walt Disney Records"
-        src="https://www.youtube-nocookie.com/embed/Qh_rtS95oms?playsinline=1"
+      <iframe title="Music from Disney Starlight — Spotify"
+        src="https://open.spotify.com/embed/album/6K3lw78IwRoSe9ZKqoKAdQ"
         referrerPolicy="strict-origin-when-cross-origin"
-        allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
         allowFullScreen/>
       <div className="gift-park-links">
         <a className="ghost" href="https://www.youtube.com/watch?v=Qh_rtS95oms" target="_blank" rel="noopener">เปิดบน YouTube</a>
