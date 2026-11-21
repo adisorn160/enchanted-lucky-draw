@@ -634,3 +634,45 @@ body:has(.gift-exchange) {
 .gift-recipient-columns p { margin:0; padding:0 12px 12px; color:#65546b; font-size:14px; }
 @media(max-width:480px) { .gift-recipient-columns { grid-template-columns:1fr; } }
 @media(prefers-reduced-motion:reduce) { .gift-mouse-cheer { animation:none; } }
+
+.gift-avatar {
+  display:inline-block;
+  flex:none;
+  width:var(--gift-avatar-size,36px);
+  height:var(--gift-avatar-size,36px);
+  border-radius:50%;
+  border:1px solid #ffe2a2;
+  background-color:#d8c7ee;
+  background-repeat:no-repeat;
+  box-shadow:0 1px 6px #30144844;
+}
+.gift-avatar-letter { display:inline-grid; place-items:center; color:#422856; font-size:12px; font-weight:750; }
+.gift-person { display:inline-flex; align-items:center; justify-content:center; gap:6px; max-width:100%; min-width:0; }
+.gift-person strong { overflow-wrap:anywhere; min-width:0; }
+.gift-pair-result .gift-person { --gift-avatar-size:clamp(46px,15vw,76px); flex-direction:column; }
+.gift-pair-result .gift-person strong { font-size:clamp(19px,5vw,34px); }
+.gift-roller .gift-person { --gift-avatar-size:62px; flex-direction:column; }
+.gift-wheel-person { --gift-avatar-size:clamp(15px,5.2vw,27px); display:flex; flex-direction:column; align-items:center; gap:2px; padding-top:6%; font-size:9px; }
+.gift-wheel-name { max-width:49px; overflow:hidden; text-overflow:ellipsis; }
+.gift-recipient-columns li { --gift-avatar-size:26px; display:flex; align-items:center; gap:6px; padding:3px 9px 3px 3px; }
+.gift-recipient-columns li span:last-child { overflow-wrap:anywhere; }
+.gift-pair-list .gift-person { --gift-avatar-size:27px; justify-content:flex-start; }
+.gift-park-music { margin-top:10px; color:#594165; }
+.gift-park-music > summary {
+  display:list-item;
+  width:max-content;
+  max-width:100%;
+  margin-left:auto;
+  min-height:44px;
+  padding:9px 13px;
+  border:1px solid #a679ae66;
+  border-radius:999px;
+  background:#fff8f5;
+  font-size:13px;
+  font-weight:750;
+  cursor:pointer;
+}
+.gift-park-player { max-width:550px; margin:10px 0 0 auto; padding:12px; border:1px solid #a679ae66; border-radius:18px; background:#fff8f3; }
+.gift-park-player p { margin:0 0 8px; font-size:13px; }
+.gift-park-player iframe { display:block; width:100%; min-height:200px; aspect-ratio:16/9; border:0; border-radius:12px; background:#2b193e; }
+.gift-park-links { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }

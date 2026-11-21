@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import LegacyDraw from './legacy-draw';
+import { portraitForSlot } from './lib/avatars';
 import { csvNames } from './lib/roster';
 import { drawPosition, MAX_PARTICIPANTS } from './lib/wheel';
 import { GIFT_SLOWDOWN_START, giftSpinProgress, recipientStatus, type GiftRoom, type GiftSpin } from './lib/gifts';
@@ -17,11 +18,53 @@ function GiftMusicButton({playing,unavailable,toggle}: MusicControl) {
   </div>;
 }
 
-function GiftAnimation({spin, now, mode}: {spin:GiftSpin; now:number; mode:GiftRoom['drawMode']}) {
+type AvatarSlots = ReadonlyMap<string, number>;
+
+function GiftAvatar({name,slot}: {name:string;slot:number|undefined}) {
+  const portrait=portraitForSlot(slot);
+  if (!portrait) return <span className="gift-avatar gift-avatar-letter" aria-hidden="true">{Array.from(name)[0]}</span>;
+  const {source,x,y,size,width,height}=portrait;
+  const left=Math.min(Math.max(0,x-size/2),width-size);
+  const top=Math.min(Math.max(0,y-size/2),height-size);
+  return <span className="gift-avatar" aria-hidden="true" data-portrait={slot} style={{
+    backgroundImage:`url(${source})`,
+    backgroundSize:`${width/size*100}% ${height/size*100}%`,
+    backgroundPosition:`${left/(width-size)*100}% ${top/(height-size)*100}%`,
+  }}/>;
+}
+
+function GiftPerson({name,avatars}: {name:string;avatars:AvatarSlots}) {
+  return <span className="gift-person"><GiftAvatar name={name} slot={avatars.get(name)}/><strong>{name}</strong></span>;
+}
+
+function DisneyParkMusic({onChange}: {onChange:(expanded:boolean)=>void}) {
+  const [open,setOpen]=useState(false);
+  return <details className="gift-park-music" onToggle={event=>{
+    const expanded=event.currentTarget.open;
+    setOpen(expanded);
+    onChange(expanded);
+  }}>
+    <summary>♫ เพลงจากสวนสนุกดิสนีย์</summary>
+    {open&&<div className="gift-park-player">
+      <p><strong>Starlight Anthem</strong> · ขบวนพาเหรด Disney Starlight ที่ Magic Kingdom</p>
+      <iframe title="Starlight Anthem — Walt Disney Records"
+        src="https://www.youtube-nocookie.com/embed/Qh_rtS95oms?playsinline=1"
+        referrerPolicy="strict-origin-when-cross-origin"
+        allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+        allowFullScreen/>
+      <div className="gift-park-links">
+        <a className="ghost" href="https://www.youtube.com/watch?v=Qh_rtS95oms" target="_blank" rel="noopener">เปิดบน YouTube</a>
+        <a className="ghost" href="https://open.spotify.com/album/6K3lw78IwRoSe9ZKqoKAdQ" target="_blank" rel="noopener">เปิดอัลบั้มบน Spotify</a>
+      </div>
+    </div>}
+  </details>;
+}
+
+function GiftAnimation({spin,now,mode,avatars}: {spin:GiftSpin;now:number;mode:GiftRoom['drawMode'];avatars:AvatarSlots}) {
   const progress = Math.max(0,Math.min(1,(now-spin.start)/spin.duration));
   if (mode === 'scroll') {
     const index = Math.round(drawPosition(progress,spin.names.length,spin.winner,giftSpinProgress));
-    return <div className="gift-roller" aria-hidden="true"><span>✦</span><strong>{spin.names[index]}</strong><span>✦</span></div>;
+    return <div className="gift-roller" aria-hidden="true"><span>✦</span><GiftPerson name={spin.names[index]} avatars={avatars}/><span>✦</span></div>;
   }
   const count = spin.names.length;
   const slice = 360/count;
@@ -33,7 +76,7 @@ function GiftAnimation({spin, now, mode}: {spin:GiftSpin; now:number; mode:GiftR
   return <div className="party-wheel" aria-hidden="true">
     <span className="pointer"/>
     <div className="party-wheel-rotor" style={{background,transform:`rotate(${angle}deg)`}}>
-      {count <= 24 && spin.names.map((name,i)=><span key={name} className="party-wheel-label" style={{transform:`rotate(${(i+.5)*slice}deg)`}}>{name}</span>)}
+      {count <= 24 && spin.names.map((name,i)=><span key={name} className="party-wheel-label gift-wheel-person" style={{transform:`rotate(${(i+.5)*slice}deg)`}}><GiftAvatar name={name} slot={avatars.get(name)}/><span className="gift-wheel-name">{name}</span></span>)}
     </div>
     <span className="party-wheel-hub">♜</span>
   </div>;
@@ -51,7 +94,7 @@ function StorybookGallery() {
   </section>;
 }
 
-function GiftDrawDialog({spin,mode,now,music}: {spin:GiftSpin; mode:GiftRoom['drawMode']; now:number; music:MusicControl}) {
+function GiftDrawDialog({spin,mode,now,music,avatars}: {spin:GiftSpin;mode:GiftRoom['drawMode'];now:number;music:MusicControl|null;avatars:AvatarSlots}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const revealed = now >= spin.start + spin.duration;
   const slowing = !revealed&&now >= spin.start+spin.duration*GIFT_SLOWDOWN_START;
@@ -67,24 +110,24 @@ function GiftDrawDialog({spin,mode,now,music}: {spin:GiftSpin; mode:GiftRoom['dr
       : <span className="gift-stage-spark" aria-hidden="true">✦</span>}
     <h2 id="gift-draw-heading">{revealed?'จับคู่ได้แล้ว':`${spin.giver} จะให้ของขวัญกับใคร?`}</h2>
     {revealed
-      ? <div className="gift-pair-result" role="status"><strong>{spin.giver}</strong><span>ให้ของขวัญกับ</span><strong>{spin.names[spin.winner]}</strong></div>
-      : <><GiftAnimation spin={spin} now={now} mode={mode}/><p className="gift-draw-phase" aria-live="polite">{slowing?'กำลังชะลอ…':now<spin.start?'เตรียมลุ้น':'กำลังสุ่ม'}</p></>}
-    <GiftMusicButton {...music}/>
+      ? <div className="gift-pair-result" role="status"><GiftPerson name={spin.giver} avatars={avatars}/><span>ให้ของขวัญกับ</span><GiftPerson name={spin.names[spin.winner]} avatars={avatars}/></div>
+      : <><GiftAnimation spin={spin} now={now} mode={mode} avatars={avatars}/><p className="gift-draw-phase" aria-live="polite">{slowing?'กำลังชะลอ…':now<spin.start?'เตรียมลุ้น':'กำลังสุ่ม'}</p></>}
+    {music&&<GiftMusicButton {...music}/>}
   </dialog>;
 }
 
-function RecipientRoster({participants,pairs}: {participants:string[]; pairs:GiftRoom['pairs']}) {
+function RecipientRoster({participants,pairs,avatars}: {participants:string[];pairs:GiftRoom['pairs'];avatars:AvatarSlots}) {
   const {received,waiting} = recipientStatus(participants,pairs);
   return <section className="panel gift-recipient-panel" aria-labelledby="gift-recipient-heading">
     <h2 id="gift-recipient-heading">สถานะผู้รับของขวัญ</h2>
     <div className="gift-recipient-columns">
       <details open>
         <summary>ยังไม่ได้รับ <span>{waiting.length} คน</span></summary>
-        {waiting.length?<ul>{waiting.map(name=><li key={name}>{name}</li>)}</ul>:<p>ได้ครบทุกคนแล้ว</p>}
+        {waiting.length?<ul>{waiting.map(name=><li key={name}><GiftAvatar name={name} slot={avatars.get(name)}/><span>{name}</span></li>)}</ul>:<p>ได้ครบทุกคนแล้ว</p>}
       </details>
       <details open>
         <summary>ได้รับแล้ว <span>{received.length} คน</span></summary>
-        {received.length?<ul>{received.map(name=><li key={name}>{name}</li>)}</ul>:<p>ยังไม่มีผู้รับ</p>}
+        {received.length?<ul>{received.map(name=><li key={name}><GiftAvatar name={name} slot={avatars.get(name)}/><span>{name}</span></li>)}</ul>:<p>ยังไม่มีผู้รับ</p>}
       </details>
     </div>
   </section>;
@@ -114,6 +157,7 @@ export default function GiftExchange() {
   const musicPausedByChoice=useRef(false);
   const [musicPlaying,setMusicPlaying]=useState(false);
   const [musicUnavailable,setMusicUnavailable]=useState(false);
+  const [parkMusicOpen,setParkMusicOpen]=useState(false);
 
   function playMusic() {
     const track=audio.current;
@@ -195,6 +239,8 @@ export default function GiftExchange() {
     return ()=>clearInterval(timer);
   },[active]);
 
+  const roster=room?.participants;
+  const avatars=useMemo(()=>new Map(roster?.map((name,index)=>[name,index])),[roster]);
   const saved=room?JSON.stringify([room.participants,room.title,room.drawMode]):'';
   useEffect(()=>{
     if (!saved) return;
@@ -262,8 +308,15 @@ export default function GiftExchange() {
       onPlaying={()=>setMusicPlaying(true)} onPause={()=>setMusicPlaying(false)} onError={()=>setMusicUnavailable(true)}/>
     <header>
       <a className="brand" href="/"><span className="brand-symbol" aria-hidden="true">✦</span><span>Enchanted <span className="brand-yellow">Kingdom</span><small>GIFT EXCHANGE</small></span></a>
-      <div className="gift-header-actions">{room&&<span className="gift-role">{room.host?'ผู้ควบคุม':'ผู้ชม'}</span>}<GiftMusicButton {...music}/></div>
+      <div className="gift-header-actions">{room&&<span className="gift-role">{room.host?'ผู้ควบคุม':'ผู้ชม'}</span>}{!parkMusicOpen&&<GiftMusicButton {...music}/>}</div>
     </header>
+    <DisneyParkMusic onChange={expanded=>{
+      setParkMusicOpen(expanded);
+      if (expanded) {
+        musicPausedByChoice.current=true;
+        audio.current?.pause();
+      }
+    }}/>
     {error&&<p role="alert" className="alert">{error}</p>}
     {!route?.id&&<section className="gift-landing">
       <div className="gift-hero-copy">
@@ -285,7 +338,7 @@ export default function GiftExchange() {
     {!route?.id&&<StorybookGallery/>}
     {route?.id&&!room&&!closed&&!error&&<p role="status">กำลังเปิดห้องจับฉลาก…</p>}
     {room&&<>
-      {spin&&showDrawDialog&&<GiftDrawDialog key={spin.id} spin={spin} mode={room.drawMode} now={now} music={music}/>}
+      {spin&&showDrawDialog&&<GiftDrawDialog key={spin.id} spin={spin} mode={room.drawMode} now={now} music={parkMusicOpen?null:music} avatars={avatars}/>}
       <div className="gift-room-heading">
         <div><h1>{room.title}</h1><p>จับคู่แล้ว {shownPairs.length} จาก {room.participants.length} คน</p></div>
         {room.host&&<div className="gift-actions"><button className="ghost" onClick={copyViewer}>คัดลอกลิงก์ผู้ชม</button><a className="ghost" href={share} target="_blank" rel="noopener">เปิดหน้าผู้ชม</a></div>}
@@ -296,7 +349,7 @@ export default function GiftExchange() {
           <span className="gift-stage-spark" aria-hidden="true">✦</span>
           <p className="gift-stage-label">{active?'กำลังสุ่มผู้รับ':lastPair?'คู่ล่าสุด':'พร้อมจับคู่'}</p>
           {active&&room.spin?<h2>{room.spin.giver} จะให้ของขวัญกับใคร?</h2>:
-            lastPair?<div className="gift-pair-result" aria-live="polite"><strong>{lastPair.giver}</strong><span>ให้ของขวัญกับ</span><strong>{lastPair.recipient}</strong></div>:
+            lastPair?<div className="gift-pair-result" aria-live="polite"><GiftPerson name={lastPair.giver} avatars={avatars}/><span>ให้ของขวัญกับ</span><GiftPerson name={lastPair.recipient} avatars={avatars}/></div>:
             <h2>{room.nextGiver?`ผู้ให้คนแรกคือ ${room.nextGiver}`:'รอรายชื่อผู้ร่วมแลกของขวัญ'}</h2>}
           {!active&&shownPairs.length>0&&<p>{room.nextGiver?`ผู้ให้คนถัดไปคือ ${room.nextGiver}`:'จับคู่ครบทุกคนแล้ว'}</p>}
           {room.host&&<button className="primary gift-spin" disabled={busy||active||dirty||room.participants.length<2||!room.nextGiver} onClick={()=>act('spin')}>สุ่มผู้รับ{room.nextGiver&&!active?`ให้ ${room.nextGiver}`:''}</button>}
@@ -321,10 +374,10 @@ export default function GiftExchange() {
           <button className="secondary" disabled={locked||busy||!dirty||participants.length>MAX_PARTICIPANTS} onClick={()=>act('config')}>บันทึกรายชื่อ</button>
         </section>}
       </div>
-      {room.participants.length>0&&<RecipientRoster participants={room.participants} pairs={shownPairs}/>}
+      {room.participants.length>0&&<RecipientRoster participants={room.participants} pairs={shownPairs} avatars={avatars}/>}
       {shownPairs.length>0&&<section className="panel gift-pair-list">
         <div className="gift-room-heading"><h2>คู่แลกของขวัญ</h2>{room.host&&<a className="ghost" href={exportUrl}>ดาวน์โหลด CSV</a>}</div>
-        <table><thead><tr><th scope="col">ผู้ให้</th><th scope="col">ผู้รับ</th></tr></thead><tbody>{shownPairs.map(pair=><tr key={pair.giver}><td>{pair.giver}</td><td>{pair.recipient}</td></tr>)}</tbody></table>
+        <table><thead><tr><th scope="col">ผู้ให้</th><th scope="col">ผู้รับ</th></tr></thead><tbody>{shownPairs.map(pair=><tr key={pair.giver}><td><GiftPerson name={pair.giver} avatars={avatars}/></td><td><GiftPerson name={pair.recipient} avatars={avatars}/></td></tr>)}</tbody></table>
       </section>}
       {!room.host&&<StorybookGallery/>}
       {room.host&&<section className="end-room">{confirmClose?<><span>ปิดห้องและล้างผลทั้งหมด?</span><button className="ghost" disabled={busy} onClick={()=>act('close')}>ปิดห้อง</button><button className="ghost" onClick={()=>setConfirmClose(false)}>ยกเลิก</button></>:<button className="ghost" onClick={()=>setConfirmClose(true)}>จบงานและปิดห้อง</button>}</section>}

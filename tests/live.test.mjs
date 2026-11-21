@@ -18,6 +18,14 @@ const { applyGiftAction, giftView } = await import('../app/api/room/gifts.ts');
 
 const { giftSpinProgress, recipientStatus } = await import('../app/lib/gifts.ts');
 
+const { portraits, portraitForSlot } = await import('../app/lib/avatars.ts');
+test('twenty roster slots have distinct portrait crops and later slots fall back', () => {
+  assert.equal(portraits.length,20);
+  assert.equal(new Set(portraits.map(({source,x,y})=>[source,x,y].join(':'))).size,20);
+  assert.equal(portraitForSlot(19),portraits[19]);
+  assert.equal(portraitForSlot(20),undefined);
+});
+
 test('draw motion decelerates near the finish and reaches the exact final position', () => {
   const travel = (start,end) => giftSpinProgress(end)-giftSpinProgress(start);
   assert.equal(giftSpinProgress(-1),0);
