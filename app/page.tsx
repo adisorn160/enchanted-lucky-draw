@@ -1,22 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import LegacyDraw from './legacy-draw';
 import { portraitForSlot } from './lib/avatars';
+import { useDrawSound } from './lib/draw-sound';
 import { csvNames } from './lib/roster';
 import { drawPosition, MAX_PARTICIPANTS } from './lib/wheel';
 import { GIFT_SLOWDOWN_START, giftSpinProgress, recipientStatus, type GiftRoom, type GiftSpin } from './lib/gifts';
-
-type MusicControl = {playing:boolean; unavailable:boolean; toggle:()=>void};
-
-function GiftMusicButton({playing,unavailable,toggle}: MusicControl) {
-  return <div className="gift-music">
-    <button className="gift-music-button" type="button" aria-label="เพลงประกอบ" aria-pressed={playing} onClick={toggle}>
-      <span aria-hidden="true">♫</span>{playing?'ปิดเพลง':'เปิดเพลง'}
-    </button>
-    {unavailable&&<span className="gift-music-error" role="status">เล่นเพลงไม่ได้ ลองแตะอีกครั้ง</span>}
-  </div>;
-}
 
 type AvatarSlots = ReadonlyMap<string, number>;
 
@@ -35,29 +25,6 @@ function GiftAvatar({name,slot}: {name:string;slot:number|undefined}) {
 
 function GiftPerson({name,avatars}: {name:string;avatars:AvatarSlots}) {
   return <span className="gift-person"><GiftAvatar name={name} slot={avatars.get(name)}/><strong>{name}</strong></span>;
-}
-
-function DisneyParkMusic({onChange}: {onChange:(expanded:boolean)=>void}) {
-  const [open,setOpen]=useState(false);
-  return <details className="gift-park-music" onToggle={event=>{
-    const expanded=event.currentTarget.open;
-    setOpen(expanded);
-    onChange(expanded);
-  }}>
-    <summary>♫ เพลงจากสวนสนุกดิสนีย์</summary>
-    {open&&<div className="gift-park-player">
-      <p><strong>Starlight Anthem</strong> · ขบวนพาเหรด Disney Starlight ที่ Magic Kingdom</p>
-      <iframe title="Music from Disney Starlight — Spotify"
-        src="https://open.spotify.com/embed/album/6K3lw78IwRoSe9ZKqoKAdQ"
-        referrerPolicy="strict-origin-when-cross-origin"
-        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-        allowFullScreen/>
-      <div className="gift-park-links">
-        <a className="ghost" href="https://www.youtube.com/watch?v=Qh_rtS95oms" target="_blank" rel="noopener">เปิดบน YouTube</a>
-        <a className="ghost" href="https://open.spotify.com/album/6K3lw78IwRoSe9ZKqoKAdQ" target="_blank" rel="noopener">เปิดอัลบั้มบน Spotify</a>
-      </div>
-    </div>}
-  </details>;
 }
 
 function GiftAnimation({spin,now,mode,avatars}: {spin:GiftSpin;now:number;mode:GiftRoom['drawMode'];avatars:AvatarSlots}) {
@@ -82,19 +49,21 @@ function GiftAnimation({spin,now,mode,avatars}: {spin:GiftSpin;now:number;mode:G
   </div>;
 }
 
-function StorybookGallery() {
-  return <section className="gift-storybook-gallery" aria-label="ภาพตัวละคร">
-    <figure>
-      <img src="/art/storybook-characters.webp" width={850} height={446} loading="lazy" alt="ภาพรวมตัวละครดิสนีย์จากหลายเรื่อง"/>
-    </figure>
-    <figure>
-      <img src="/art/storybook-princesses.webp" width={387} height={516} loading="lazy" alt="ภาพตัวละครเจ้าหญิงดิสนีย์"/>
-    </figure>
-    <p>ภาพตัวละคร © Disney</p>
-  </section>;
+const FIREWORK_COLORS = ['#ffd888','#ffaedb','#b7d9ff'];
+
+function GiftFireworks() {
+  return <div className="gift-fireworks" aria-hidden="true">
+    {FIREWORK_COLORS.map((color,burst)=>
+      <span className="gift-firework-burst" key={color} style={{'--firework-color':color,'--firework-delay':`${burst*.22}s`} as CSSProperties}>
+        {Array.from({length:12},(_,index)=>
+          <i key={index} style={{'--firework-angle':`${index*30+burst*13}deg`,'--firework-distance':`${48+index%3*10}px`} as CSSProperties}/>
+        )}
+      </span>
+    )}
+  </div>;
 }
 
-function GiftDrawDialog({spin,mode,now,music,avatars}: {spin:GiftSpin;mode:GiftRoom['drawMode'];now:number;music:MusicControl|null;avatars:AvatarSlots}) {
+function GiftDrawDialog({spin,mode,now,avatars}: {spin:GiftSpin;mode:GiftRoom['drawMode'];now:number;avatars:AvatarSlots}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const revealed = now >= spin.start + spin.duration;
   const slowing = !revealed&&now >= spin.start+spin.duration*GIFT_SLOWDOWN_START;
@@ -104,6 +73,7 @@ function GiftDrawDialog({spin,mode,now,music,avatars}: {spin:GiftSpin;mode:GiftR
   },[]);
 
   return <dialog ref={dialog} className="gift-draw-dialog" aria-labelledby="gift-draw-heading">
+    {revealed&&<GiftFireworks/>}
     <button className="gift-draw-close" type="button" aria-label="ปิดหน้าต่างสุ่ม" onClick={()=>dialog.current?.close()}>×</button>
     {revealed
       ? <div className="gift-mouse-cheer" aria-hidden="true"><span/><span/><span/><i>✦</i><i>✧</i><i>✦</i></div>
@@ -112,7 +82,6 @@ function GiftDrawDialog({spin,mode,now,music,avatars}: {spin:GiftSpin;mode:GiftR
     {revealed
       ? <div className="gift-pair-result" role="status"><GiftPerson name={spin.giver} avatars={avatars}/><span>ให้ของขวัญกับ</span><GiftPerson name={spin.names[spin.winner]} avatars={avatars}/></div>
       : <><GiftAnimation spin={spin} now={now} mode={mode} avatars={avatars}/><p className="gift-draw-phase" aria-live="polite">{slowing?'กำลังชะลอ…':now<spin.start?'เตรียมลุ้น':'กำลังสุ่ม'}</p></>}
-    {music&&<GiftMusicButton {...music}/>}
   </dialog>;
 }
 
@@ -153,33 +122,7 @@ export default function GiftExchange() {
   const revision=useRef(0);
   const pending=useRef(false);
   const initialized=useRef(false);
-  const audio=useRef<HTMLAudioElement>(null);
-  const musicPausedByChoice=useRef(false);
-  const [musicPlaying,setMusicPlaying]=useState(false);
-  const [musicUnavailable,setMusicUnavailable]=useState(false);
-  const [parkMusicOpen,setParkMusicOpen]=useState(false);
-
-  function playMusic() {
-    const track=audio.current;
-    if (!track || !track.paused) return;
-    track.volume=.72;
-    setMusicUnavailable(false);
-    void track.play().catch(error=>{
-      if (error.name!=='AbortError') setMusicUnavailable(true);
-    });
-  }
-
-  const music:MusicControl = {
-    playing:musicPlaying,
-    unavailable:musicUnavailable,
-    toggle:()=>{
-      const track=audio.current;
-      if (!track) return;
-      musicPausedByChoice.current=!track.paused;
-      if (musicPausedByChoice.current) track.pause();
-      else playMusic();
-    },
-  };
+  const sound=useDrawSound(room?.spin,offset);
 
   useEffect(()=>{
     if (initialized.current) return;
@@ -266,7 +209,7 @@ export default function GiftExchange() {
 
   async function act(op:'create'|'config'|'spin'|'close') {
     if (pending.current) return;
-    if (op==='spin'&&!musicPausedByChoice.current) playMusic();
+    if (op==='spin') sound.unlock();
     pending.current=true;
     revision.current++;
     setBusy(true);setError('');
@@ -303,20 +246,11 @@ export default function GiftExchange() {
   }
 
   if (legacy) return <LegacyDraw/>;
-  return <main className="gift-exchange">
-    <audio ref={audio} src="/audio/lantern-waltz-clear.mp3" preload="none" loop
-      onPlaying={()=>setMusicPlaying(true)} onPause={()=>setMusicPlaying(false)} onError={()=>setMusicUnavailable(true)}/>
+  return <main className="gift-exchange" onPointerUp={route?.id?sound.unlock:undefined} onKeyDown={route?.id?sound.unlock:undefined}>
     <header>
       <a className="brand" href="/"><span className="brand-symbol" aria-hidden="true">✦</span><span>Enchanted <span className="brand-yellow">Kingdom</span><small>GIFT EXCHANGE</small></span></a>
-      <div className="gift-header-actions">{room&&<span className="gift-role">{room.host?'ผู้ควบคุม':'ผู้ชม'}</span>}{!parkMusicOpen&&<GiftMusicButton {...music}/>}</div>
+      <div className="gift-header-actions">{room&&<span className="gift-role">{room.host?'ผู้ควบคุม':'ผู้ชม'}</span>}</div>
     </header>
-    <DisneyParkMusic onChange={expanded=>{
-      setParkMusicOpen(expanded);
-      if (expanded) {
-        musicPausedByChoice.current=true;
-        audio.current?.pause();
-      }
-    }}/>
     {error&&<p role="alert" className="alert">{error}</p>}
     {!route?.id&&<section className="gift-landing">
       <div className="gift-hero-copy">
@@ -335,10 +269,9 @@ export default function GiftExchange() {
         <figcaption>Cinderella Castle · © Disney</figcaption>
       </figure>
     </section>}
-    {!route?.id&&<StorybookGallery/>}
     {route?.id&&!room&&!closed&&!error&&<p role="status">กำลังเปิดห้องจับฉลาก…</p>}
     {room&&<>
-      {spin&&showDrawDialog&&<GiftDrawDialog key={spin.id} spin={spin} mode={room.drawMode} now={now} music={parkMusicOpen?null:music} avatars={avatars}/>}
+      {spin&&showDrawDialog&&<GiftDrawDialog key={spin.id} spin={spin} mode={room.drawMode} now={now} avatars={avatars}/>}
       <div className="gift-room-heading">
         <div><h1>{room.title}</h1><p>จับคู่แล้ว {shownPairs.length} จาก {room.participants.length} คน</p></div>
         {room.host&&<div className="gift-actions"><button className="ghost" onClick={copyViewer}>คัดลอกลิงก์ผู้ชม</button><a className="ghost" href={share} target="_blank" rel="noopener">เปิดหน้าผู้ชม</a></div>}
@@ -347,6 +280,7 @@ export default function GiftExchange() {
       <div className={room.host?'gift-layout':'gift-layout viewer'}>
         <section className="stage gift-stage" aria-label="ผลจับฉลาก">
           <span className="gift-stage-spark" aria-hidden="true">✦</span>
+          {!room.host&&!sound.enabled&&<p className="gift-audio-hint">แตะหน้าจอครั้งเดียวเพื่อเปิดเสียงเอฟเฟกต์</p>}
           <p className="gift-stage-label">{active?'กำลังสุ่มผู้รับ':lastPair?'คู่ล่าสุด':'พร้อมจับคู่'}</p>
           {active&&room.spin?<h2>{room.spin.giver} จะให้ของขวัญกับใคร?</h2>:
             lastPair?<div className="gift-pair-result" aria-live="polite"><GiftPerson name={lastPair.giver} avatars={avatars}/><span>ให้ของขวัญกับ</span><GiftPerson name={lastPair.recipient} avatars={avatars}/></div>:
@@ -379,7 +313,6 @@ export default function GiftExchange() {
         <div className="gift-room-heading"><h2>คู่แลกของขวัญ</h2>{room.host&&<a className="ghost" href={exportUrl}>ดาวน์โหลด CSV</a>}</div>
         <table><thead><tr><th scope="col">ผู้ให้</th><th scope="col">ผู้รับ</th></tr></thead><tbody>{shownPairs.map(pair=><tr key={pair.giver}><td><GiftPerson name={pair.giver} avatars={avatars}/></td><td><GiftPerson name={pair.recipient} avatars={avatars}/></td></tr>)}</tbody></table>
       </section>}
-      {!room.host&&<StorybookGallery/>}
       {room.host&&<section className="end-room">{confirmClose?<><span>ปิดห้องและล้างผลทั้งหมด?</span><button className="ghost" disabled={busy} onClick={()=>act('close')}>ปิดห้อง</button><button className="ghost" onClick={()=>setConfirmClose(false)}>ยกเลิก</button></>:<button className="ghost" onClick={()=>setConfirmClose(true)}>จบงานและปิดห้อง</button>}</section>}
     </>}
   </main>;
