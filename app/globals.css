@@ -644,3 +644,113 @@ body:has(.gift-exchange) {
   100% { opacity:0; transform:rotate(var(--firework-angle)) translateY(var(--firework-distance)) scale(.4); }
 }
 @media(prefers-reduced-motion:reduce) { .gift-fireworks { display:none; } }
+
+.gift-exchange .gift-spotlight-stage {
+  isolation:isolate;
+  min-height:350px;
+  border:1px solid #d2b085;
+  background:
+    radial-gradient(ellipse at 50% 16%,#b782d465,transparent 61%),
+    linear-gradient(145deg,#40265ea6,#201431ee),
+    url('/art/cinderella-castle-520.webp') center 46%/cover;
+}
+.gift-spotlight-stage::before {
+  content:'';
+  position:absolute;
+  inset:8px;
+  border:1px solid #e7c58645;
+  border-radius:17px;
+  pointer-events:none;
+  z-index:-1;
+}
+.gift-current-giver { margin:12px auto; display:grid; justify-items:center; gap:13px; }
+.gift-current-giver .gift-avatar {
+  --gift-avatar-size:clamp(76px,24vw,112px);
+  border:3px solid #ffdda3;
+  box-shadow:0 0 0 6px #fed7982b,0 0 38px #f5c97e61;
+}
+.gift-current-giver h2 { color:#fff3e3; }
+.gift-room-progress { display:block; width:min(200px,100%); height:6px; accent-color:#8d589b; }
+.gift-pair-result.gift-pair-spotlight { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:10px; }
+.gift-pair-arrow { color:#ffe0a4; display:grid; justify-items:center; gap:5px; max-width:72px; text-align:center; }
+.gift-pair-arrow > span { font-size:clamp(21px,6vw,42px); line-height:1; }
+.gift-pair-arrow small { color:#f3e4f5; font-size:11px; line-height:1.35; }
+.gift-next-giver {
+  display:flex;
+  flex-wrap:wrap;
+  width:max-content;
+  max-width:100%;
+  align-items:center;
+  justify-content:center;
+  gap:5px 10px;
+  margin:3px auto 0;
+  padding:7px 14px;
+  border:1px solid #e9cd967d;
+  border-radius:999px;
+  color:#fff4df;
+  background:#37264dcc;
+  font-size:13px;
+  --gift-avatar-size:26px;
+}
+.gift-next-giver > span:first-child:not(.gift-person) { color:#f3cb88; font-weight:750; }
+.gift-next-giver .gift-person strong { font-size:15px; }
+.gift-draw-dialog.gift-draw-reveal .gift-mouse-cheer { scale:.73; height:83px; margin-top:-5px; margin-bottom:0; }
+.gift-draw-dialog .gift-pair-spotlight { padding-block:16px 18px; }
+.gift-unbox { position:relative; min-width:0; }
+.gift-unbox-person { animation:gift-unbox-person .72s .18s cubic-bezier(.16,.8,.31,1.14) both; }
+.gift-box-wrap {
+  position:absolute;
+  width:66px;
+  height:55px;
+  top:22px;
+  left:50%;
+  transform:translateX(-50%);
+  animation:gift-box-away .82s ease both;
+  pointer-events:none;
+}
+.gift-box-base, .gift-box-lid { position:absolute; left:0; width:100%; border:1px solid #ffdaa594; border-radius:6px; }
+.gift-box-base { top:15px; height:39px; background:linear-gradient(90deg,#975185 0 40%,#ffc97b 40% 59%,#975185 59%); }
+.gift-box-lid { top:4px; height:16px; background:linear-gradient(90deg,#c479a9 0 40%,#ffde9a 40% 59%,#c479a9 59%); animation:gift-box-lift .6s ease-out both; }
+.gift-box-lid::before,.gift-box-lid::after {
+  content:'';
+  position:absolute;
+  width:15px;
+  height:10px;
+  top:-11px;
+  left:16px;
+  border:2px solid #ffde9a;
+  border-radius:65% 60% 0 65%;
+  transform:rotate(18deg);
+}
+.gift-box-lid::after { left:30px; transform:rotate(-18deg) scaleX(-1); }
+.gift-recipient-badge { position:relative; display:inline-flex; flex:none; }
+.gift-recipient-badge i {
+  position:absolute;
+  right:-3px;
+  bottom:-1px;
+  display:grid;
+  place-items:center;
+  width:13px;
+  height:13px;
+  border-radius:50%;
+  background:#3e6d4a;
+  color:#fff;
+  border:1px solid #f4f8ef;
+  font:700 9px/1 'Gift Thai',sans-serif;
+}
+@keyframes gift-unbox-person {
+  0% { opacity:0; transform:translateY(25px) scale(.68); }
+  100% { opacity:1; transform:translateY(0) scale(1); }
+}
+@keyframes gift-box-lift { 100% { transform:translateY(-39px) rotate(-24deg); } }
+@keyframes gift-box-away { 64% { opacity:1; } 100% { opacity:0; } }
+@media(max-width:480px) {
+  .gift-exchange .gift-spotlight-stage { min-height:300px; }
+  .gift-pair-result.gift-pair-spotlight { gap:5px; }
+  .gift-pair-arrow { max-width:54px; }
+  .gift-pair-arrow small { font-size:10px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .gift-unbox-person { animation:none; }
+  .gift-box-wrap { display:none; }
+}

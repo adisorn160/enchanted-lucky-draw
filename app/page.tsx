@@ -54,7 +54,7 @@ const FIREWORK_COLORS = ['#ffd888','#ffaedb','#b7d9ff'];
 function GiftFireworks() {
   return <div className="gift-fireworks" aria-hidden="true">
     {FIREWORK_COLORS.map((color,burst)=>
-      <span className="gift-firework-burst" key={color} style={{'--firework-color':color,'--firework-delay':`${burst*.22}s`} as CSSProperties}>
+      <span className="gift-firework-burst" key={color} style={{'--firework-color':color,'--firework-delay':`${.32+burst*.22}s`} as CSSProperties}>
         {Array.from({length:12},(_,index)=>
           <i key={index} style={{'--firework-angle':`${index*30+burst*13}deg`,'--firework-distance':`${48+index%3*10}px`} as CSSProperties}/>
         )}
@@ -63,7 +63,22 @@ function GiftFireworks() {
   </div>;
 }
 
-function GiftDrawDialog({spin,mode,now,avatars}: {spin:GiftSpin;mode:GiftRoom['drawMode'];now:number;avatars:AvatarSlots}) {
+function NextGiftGiver({name,avatars}: {name:string|null;avatars:AvatarSlots}) {
+  return <div className="gift-next-giver">
+    {name?<><span>รอบถัดไป</span><GiftPerson name={name} avatars={avatars}/></>:<strong>จับคู่ครบทุกคนแล้ว</strong>}
+  </div>;
+}
+
+function GiftBoxReveal({name,avatars}: {name:string;avatars:AvatarSlots}) {
+  return <div className="gift-unbox">
+    <div className="gift-unbox-person"><GiftPerson name={name} avatars={avatars}/></div>
+    <div className="gift-box-wrap" aria-hidden="true">
+      <span className="gift-box-base"/><span className="gift-box-lid"/>
+    </div>
+  </div>;
+}
+
+function GiftDrawDialog({spin,mode,now,avatars,nextGiver}: {spin:GiftSpin;mode:GiftRoom['drawMode'];now:number;avatars:AvatarSlots;nextGiver:string|null}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const revealed = now >= spin.start + spin.duration;
   const slowing = !revealed&&now >= spin.start+spin.duration*GIFT_SLOWDOWN_START;
@@ -72,17 +87,25 @@ function GiftDrawDialog({spin,mode,now,avatars}: {spin:GiftSpin;mode:GiftRoom['d
     if (element && !element.open) element.showModal();
   },[]);
 
-  return <dialog ref={dialog} className="gift-draw-dialog" aria-labelledby="gift-draw-heading">
+  return <dialog ref={dialog} className={`gift-draw-dialog${revealed?' gift-draw-reveal':''}`} aria-labelledby="gift-draw-heading">
     {revealed&&<GiftFireworks/>}
     <button className="gift-draw-close" type="button" aria-label="ปิดหน้าต่างสุ่ม" onClick={()=>dialog.current?.close()}>×</button>
     {revealed
       ? <div className="gift-mouse-cheer" aria-hidden="true"><span/><span/><span/><i>✦</i><i>✧</i><i>✦</i></div>
       : <span className="gift-stage-spark" aria-hidden="true">✦</span>}
-    <h2 id="gift-draw-heading">{revealed?'จับคู่ได้แล้ว':`${spin.giver} จะให้ของขวัญกับใคร?`}</h2>
+    <h2 id="gift-draw-heading">{revealed?'เปิดกล่องเจอคู่แล้ว!':`${spin.giver} จะให้ของขวัญกับใคร?`}</h2>
     {revealed
-      ? <div className="gift-pair-result" role="status"><GiftPerson name={spin.giver} avatars={avatars}/><span>ให้ของขวัญกับ</span><GiftPerson name={spin.names[spin.winner]} avatars={avatars}/></div>
+      ? <>
+        <div className="gift-pair-result gift-pair-spotlight" role="status">
+          <GiftPerson name={spin.giver} avatars={avatars}/>
+          <span className="gift-pair-arrow"><span aria-hidden="true">➜</span><small>ให้ของขวัญกับ</small></span>
+          <GiftBoxReveal name={spin.names[spin.winner]} avatars={avatars}/>
+        </div>
+        <NextGiftGiver name={nextGiver} avatars={avatars}/>
+      </>
       : <><GiftAnimation spin={spin} now={now} mode={mode} avatars={avatars}/><p className="gift-draw-phase" aria-live="polite">{slowing?'กำลังชะลอ…':now<spin.start?'เตรียมลุ้น':'กำลังสุ่ม'}</p></>}
   </dialog>;
+
 }
 
 function RecipientRoster({participants,pairs,avatars}: {participants:string[];pairs:GiftRoom['pairs'];avatars:AvatarSlots}) {
@@ -96,7 +119,7 @@ function RecipientRoster({participants,pairs,avatars}: {participants:string[];pa
       </details>
       <details open>
         <summary>ได้รับแล้ว <span>{received.length} คน</span></summary>
-        {received.length?<ul>{received.map(name=><li key={name}><GiftAvatar name={name} slot={avatars.get(name)}/><span>{name}</span></li>)}</ul>:<p>ยังไม่มีผู้รับ</p>}
+        {received.length?<ul>{received.map(name=><li key={name} className="gift-recipient-done"><span className="gift-recipient-badge"><GiftAvatar name={name} slot={avatars.get(name)}/><i aria-hidden="true">✓</i></span><span>{name}</span></li>)}</ul>:<p>ยังไม่มีผู้รับ</p>}
       </details>
     </div>
   </section>;
@@ -204,7 +227,7 @@ export default function GiftExchange() {
     ? [...pairs,{giver:spin.giver,recipient:spin.names[spin.winner],at:revealAt}]
     : pairs;
   const lastPair=shownPairs.at(-1);
-  const showDrawDialog=Boolean(spin&&now<revealAt+3000);
+  const showDrawDialog=Boolean(spin&&now<revealAt+4200);
   const locked=active||shownPairs.length>0;
 
   async function act(op:'create'|'config'|'spin'|'close') {
@@ -271,21 +294,30 @@ export default function GiftExchange() {
     </section>}
     {route?.id&&!room&&!closed&&!error&&<p role="status">กำลังเปิดห้องจับฉลาก…</p>}
     {room&&<>
-      {spin&&showDrawDialog&&<GiftDrawDialog key={spin.id} spin={spin} mode={room.drawMode} now={now} avatars={avatars}/>}
+      {spin&&showDrawDialog&&<GiftDrawDialog key={spin.id} spin={spin} mode={room.drawMode} now={now} avatars={avatars} nextGiver={room.nextGiver}/>}
       <div className="gift-room-heading">
-        <div><h1>{room.title}</h1><p>จับคู่แล้ว {shownPairs.length} จาก {room.participants.length} คน</p></div>
+        <div><h1>{room.title}</h1><p>จับคู่แล้ว {shownPairs.length} จาก {room.participants.length} คน</p>
+          {room.participants.length>0&&<progress className="gift-room-progress" aria-label="จำนวนคู่ที่จับได้" max={room.participants.length} value={shownPairs.length}/>}</div>
         {room.host&&<div className="gift-actions"><button className="ghost" onClick={copyViewer}>คัดลอกลิงก์ผู้ชม</button><a className="ghost" href={share} target="_blank" rel="noopener">เปิดหน้าผู้ชม</a></div>}
       </div>
       {notice&&<p role="status" className="gift-notice">{notice}</p>}
       <div className={room.host?'gift-layout':'gift-layout viewer'}>
-        <section className="stage gift-stage" aria-label="ผลจับฉลาก">
+        <section className="stage gift-stage gift-spotlight-stage" aria-label="ผลจับฉลาก">
           <span className="gift-stage-spark" aria-hidden="true">✦</span>
           {!room.host&&!sound.enabled&&<p className="gift-audio-hint">แตะหน้าจอครั้งเดียวเพื่อเปิดเสียงเอฟเฟกต์</p>}
           <p className="gift-stage-label">{active?'กำลังสุ่มผู้รับ':lastPair?'คู่ล่าสุด':'พร้อมจับคู่'}</p>
-          {active&&room.spin?<h2>{room.spin.giver} จะให้ของขวัญกับใคร?</h2>:
-            lastPair?<div className="gift-pair-result" aria-live="polite"><GiftPerson name={lastPair.giver} avatars={avatars}/><span>ให้ของขวัญกับ</span><GiftPerson name={lastPair.recipient} avatars={avatars}/></div>:
-            <h2>{room.nextGiver?`ผู้ให้คนแรกคือ ${room.nextGiver}`:'รอรายชื่อผู้ร่วมแลกของขวัญ'}</h2>}
-          {!active&&shownPairs.length>0&&<p>{room.nextGiver?`ผู้ให้คนถัดไปคือ ${room.nextGiver}`:'จับคู่ครบทุกคนแล้ว'}</p>}
+          {active&&room.spin
+            ? <div className="gift-current-giver"><GiftAvatar name={room.spin.giver} slot={avatars.get(room.spin.giver)}/><h2>{room.spin.giver} จะให้ของขวัญกับใคร?</h2></div>
+            : lastPair
+              ? <div className="gift-pair-result gift-pair-spotlight" aria-live="polite">
+                  <GiftPerson name={lastPair.giver} avatars={avatars}/>
+                  <span className="gift-pair-arrow"><span aria-hidden="true">➜</span><small>ให้ของขวัญกับ</small></span>
+                  <GiftPerson name={lastPair.recipient} avatars={avatars}/>
+                </div>
+              : room.nextGiver
+                ? <div className="gift-current-giver"><GiftAvatar name={room.nextGiver} slot={avatars.get(room.nextGiver)}/><h2>{room.nextGiver} จะให้ของขวัญกับใคร?</h2></div>
+                : <h2>รอรายชื่อผู้ร่วมแลกของขวัญ</h2>}
+          {!active&&lastPair&&<NextGiftGiver name={room.nextGiver} avatars={avatars}/>}
           {room.host&&<button className="primary gift-spin" disabled={busy||active||dirty||room.participants.length<2||!room.nextGiver} onClick={()=>act('spin')}>สุ่มผู้รับ{room.nextGiver&&!active?`ให้ ${room.nextGiver}`:''}</button>}
         </section>
         {room.host&&<section className="panel gift-controls">
