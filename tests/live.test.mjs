@@ -16,6 +16,22 @@ const { csvNames, nameKey } = await import('../app/lib/roster.ts');
 const { GET, POST } = await import('../app/api/room/route.ts');
 const { applyGiftAction, giftView } = await import('../app/api/room/gifts.ts');
 
+const { giftSpinProgress, recipientStatus } = await import('../app/lib/gifts.ts');
+
+test('draw motion decelerates near the finish and reaches the exact final position', () => {
+  const travel = (start,end) => giftSpinProgress(end)-giftSpinProgress(start);
+  assert.equal(giftSpinProgress(-1),0);
+  assert.equal(giftSpinProgress(1.1),1);
+  assert(travel(.4,.5)>travel(.7,.8));
+  assert(travel(.7,.8)>travel(.9,1));
+  assert(travel(.9,1)>0);
+});
+
+test('recipient status uses revealed recipients rather than givers', () => {
+  assert.deepEqual(recipientStatus(['หนึ่ง','สอง','สาม'],[{giver:'หนึ่ง',recipient:'สาม',at:1000}]),
+    {received:['สาม'],waiting:['หนึ่ง','สอง']});
+});
+
 test('CSV accepts BOM, reordered headers, and quoted fields', () => {
   assert.deepEqual(csvNames('\ufeffignored,username\r\n1,"name, with ""quotes"""\r\n2,@ส้ม'), ['name, with "quotes"', '@ส้ม']);
   assert.deepEqual(csvNames('@Mint\n@Fah'), ['@Mint', '@Fah']);

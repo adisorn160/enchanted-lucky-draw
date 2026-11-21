@@ -20,10 +20,10 @@ export const money = (value: number) => new Intl.NumberFormat('th-TH',{maximumFr
 export const nextPrizeIndex = (prizes: Prize[]) => prizes.reduce((best,p,i)=>p.awarded?best:best<0||p.value<prizes[best].value||(p.value===prizes[best].value&&i>best)?i:best,-1);
 
 // Unfolded travel always slows down; reflecting it keeps the real table in range.
-export function drawPosition(progress:number,count:number,winner:number){
+export function drawPosition(progress:number,count:number,winner:number,ease=(p:number)=>1-Math.pow(1-p,3)){
  if(count<2)return 0;
  const p=Math.max(0,Math.min(1,progress));if(p===1)return winner;
  const range=count-1,period=range*2,cycles=Math.max(3,Math.ceil(90/period));
- const distance=cycles*period+winner,travel=distance*(1-Math.pow(1-p,3)),phase=travel%period;
+ const distance=cycles*period+winner,travel=distance*ease(p),phase=travel%period;
  return phase<=range?phase:period-phase;
 }

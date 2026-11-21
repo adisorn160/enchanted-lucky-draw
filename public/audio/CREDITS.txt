@@ -14,5 +14,5 @@ Both are real-world recordings, not synthesized tones.
 
 finale-fanfare.m4a: Original programmatically composed brass, timpani and bell fanfare created for Lucky Live.
 
-Lantern Waltz: Original instrumental music composed for Enchanted Kingdom
+Lantern Waltz (lantern-waltz-clear.mp3): Original instrumental music composed for Enchanted Kingdom
 Gift Exchange. Celesta, harp, and soft strings.
