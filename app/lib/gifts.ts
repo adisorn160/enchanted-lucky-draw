@@ -32,3 +32,12 @@ export function recipientStatus(participants: string[], pairs: GiftPair[]) {
     waiting:participants.filter(name=>!picked.has(name)),
   };
 }
+
+export const GIFT_COUNTDOWN_SECONDS = 3;
+export const GIFT_START_LEAD_MS = GIFT_COUNTDOWN_SECONDS*1000+1800;
+
+export function giftCountdown(start: number, now: number) {
+  const remaining=start-now;
+  if (remaining<=0 || remaining>GIFT_COUNTDOWN_SECONDS*1000) return null;
+  return Math.ceil(remaining/1000);
+}

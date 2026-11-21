@@ -16,7 +16,7 @@ const { csvNames, nameKey } = await import('../app/lib/roster.ts');
 const { GET, POST } = await import('../app/api/room/route.ts');
 const { applyGiftAction, giftView } = await import('../app/api/room/gifts.ts');
 
-const { giftSpinProgress, recipientStatus } = await import('../app/lib/gifts.ts');
+const { giftCountdown, giftSpinProgress, recipientStatus } = await import('../app/lib/gifts.ts');
 
 const { portraits, portraitForSlot } = await import('../app/lib/avatars.ts');
 test('twenty roster slots have distinct portrait crops and later slots fall back', () => {
@@ -24,6 +24,17 @@ test('twenty roster slots have distinct portrait crops and later slots fall back
   assert.equal(new Set(portraits.map(({source,x,y})=>[source,x,y].join(':'))).size,20);
   assert.equal(portraitForSlot(19),portraits[19]);
   assert.equal(portraitForSlot(20),undefined);
+});
+
+test('countdown uses the shared start time and ticks 3, 2, 1', () => {
+  const start=10000;
+  assert.equal(giftCountdown(start,6999),null);
+  assert.equal(giftCountdown(start,7000),3);
+  assert.equal(giftCountdown(start,7999),3);
+  assert.equal(giftCountdown(start,8000),2);
+  assert.equal(giftCountdown(start,9000),1);
+  assert.equal(giftCountdown(start,9999),1);
+  assert.equal(giftCountdown(start,10000),null);
 });
 
 test('draw motion decelerates near the finish and reaches the exact final position', () => {
@@ -108,6 +119,7 @@ test('temporary Worker rooms share a single draw across 20 viewers and clear on 
   const attempted=await Promise.all([send({op:'spin',id,round:0},cookie),send({op:'spin',id,round:0},cookie)]);
   assert.deepEqual(attempted.map(res=>res.status).sort(),[200,409]);
   let {spin}=await attempted.find(res=>res.ok).json();
+  assert.equal(spin.start-clock,4800);
   const viewers=await Promise.all(Array.from({length:20},async()=>(await read('&viewer=1')).json()));
   for(const viewer of viewers){
     assert.equal(viewer.host,false);

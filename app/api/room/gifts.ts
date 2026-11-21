@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { nameKey } from '../../lib/roster';
 import { MAX_PARTICIPANTS } from '../../lib/wheel';
-import type { GiftRoom, GiftSpin } from '../../lib/gifts';
+import { GIFT_START_LEAD_MS, type GiftRoom, type GiftSpin } from '../../lib/gifts';
 
 export type GiftState = Pick<GiftRoom, 'kind' | 'title' | 'participants' | 'drawMode' | 'spin'> & {
   assignments: string[];
@@ -64,7 +64,7 @@ export function applyGiftAction(room: GiftState, body: Record<string, unknown>, 
   const recipient = names[winner];
   const spin: GiftSpin = {
     id:crypto.randomUUID(), giver, names, winner,
-    start:now+2800, duration:7000,
+    start:now+GIFT_START_LEAD_MS, duration:7000,
   };
   room.spin = spin;
   room.pairs.push({giver,recipient,at:spin.start+spin.duration});

@@ -6,7 +6,7 @@ import { portraitForSlot } from './lib/avatars';
 import { useDrawSound } from './lib/draw-sound';
 import { csvNames } from './lib/roster';
 import { drawPosition, MAX_PARTICIPANTS } from './lib/wheel';
-import { GIFT_SLOWDOWN_START, giftSpinProgress, recipientStatus, type GiftRoom, type GiftSpin } from './lib/gifts';
+import { GIFT_SLOWDOWN_START, giftCountdown, giftSpinProgress, recipientStatus, type GiftRoom, type GiftSpin } from './lib/gifts';
 
 type AvatarSlots = ReadonlyMap<string, number>;
 
@@ -80,6 +80,8 @@ function GiftBoxReveal({name,avatars}: {name:string;avatars:AvatarSlots}) {
 
 function GiftDrawDialog({spin,mode,now,avatars,nextGiver}: {spin:GiftSpin;mode:GiftRoom['drawMode'];now:number;avatars:AvatarSlots;nextGiver:string|null}) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const preparing = now < spin.start;
+  const countdown = giftCountdown(spin.start,now);
   const revealed = now >= spin.start + spin.duration;
   const slowing = !revealed&&now >= spin.start+spin.duration*GIFT_SLOWDOWN_START;
   useEffect(()=>{
@@ -103,7 +105,14 @@ function GiftDrawDialog({spin,mode,now,avatars,nextGiver}: {spin:GiftSpin;mode:G
         </div>
         <NextGiftGiver name={nextGiver} avatars={avatars}/>
       </>
-      : <><GiftAnimation spin={spin} now={now} mode={mode} avatars={avatars}/><p className="gift-draw-phase" aria-live="polite">{slowing?'กำลังชะลอ…':now<spin.start?'เตรียมลุ้น':'กำลังสุ่ม'}</p></>}
+      : preparing
+        ? <div className="gift-countdown" role="status" aria-atomic="true">
+            <span className="gift-countdown-disc" aria-hidden="true">
+              {countdown===null?<span className="gift-countdown-star">✦</span>:<strong key={countdown}>{countdown}</strong>}
+            </span>
+            {countdown===null?<span>เตรียมลุ้น</span>:<><span className="gift-countdown-sr">เริ่มใน {countdown} วินาที</span><span aria-hidden="true">นับถอยหลังก่อนสุ่ม</span></>}
+          </div>
+        : <><GiftAnimation spin={spin} now={now} mode={mode} avatars={avatars}/><p className="gift-draw-phase" aria-live="polite">{slowing?'กำลังชะลอ…':'กำลังสุ่ม'}</p></>}
   </dialog>;
 
 }
@@ -305,7 +314,7 @@ export default function GiftExchange() {
         <section className="stage gift-stage gift-spotlight-stage" aria-label="ผลจับฉลาก">
           <span className="gift-stage-spark" aria-hidden="true">✦</span>
           {!room.host&&!sound.enabled&&<p className="gift-audio-hint">แตะหน้าจอครั้งเดียวเพื่อเปิดเสียงเอฟเฟกต์</p>}
-          <p className="gift-stage-label">{active?'กำลังสุ่มผู้รับ':lastPair?'คู่ล่าสุด':'พร้อมจับคู่'}</p>
+          <p className="gift-stage-label">{active?(spin&&now<spin.start?'เตรียมสุ่ม':'กำลังสุ่มผู้รับ'):lastPair?'คู่ล่าสุด':'พร้อมจับคู่'}</p>
           {active&&room.spin
             ? <div className="gift-current-giver"><GiftAvatar name={room.spin.giver} slot={avatars.get(room.spin.giver)}/><h2>{room.spin.giver} จะให้ของขวัญกับใคร?</h2></div>
             : lastPair

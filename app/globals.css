@@ -759,3 +759,35 @@ body:has(.gift-exchange) {
 .gift-room-progress::-webkit-progress-bar { background:#e5d3eb; border-radius:999px; }
 .gift-room-progress::-webkit-progress-value { background:linear-gradient(90deg,#a76eb0,#7a468c); border-radius:999px; }
 .gift-room-progress::-moz-progress-bar { background:linear-gradient(90deg,#a76eb0,#7a468c); border-radius:999px; }
+
+.gift-countdown {
+  margin:clamp(18px,5vw,30px) auto 4px;
+  display:grid;
+  justify-items:center;
+  gap:14px;
+  color:#ffdfa1;
+  font:650 14px/1.4 'Gift Thai',Tahoma,sans-serif;
+}
+.gift-countdown-disc {
+  width:clamp(118px,40vw,172px);
+  aspect-ratio:1;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  border:2px solid #edc687;
+  background:radial-gradient(circle,#815492,#442958 73%);
+  box-shadow:0 0 0 7px #edc68724,inset 0 0 26px #f2b9d132,0 0 38px #ebbe8c50;
+  color:#fff0bf;
+}
+.gift-countdown-disc strong {
+  font:750 clamp(72px,23vw,104px)/1 'Gift Storybook',Georgia,serif;
+  font-variant-numeric:tabular-nums;
+  animation:gift-countdown-tick .34s ease-out both;
+}
+.gift-countdown-star { font:650 52px/1 Georgia,serif; }
+.gift-countdown-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+@keyframes gift-countdown-tick {
+  from { opacity:.35; transform:scale(.77); }
+  to { opacity:1; transform:scale(1); }
+}
+@media(prefers-reduced-motion:reduce) { .gift-countdown-disc strong { animation:none; } }
